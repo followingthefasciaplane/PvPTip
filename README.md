@@ -43,7 +43,7 @@ Unfortunately, this data can only be extracted from the client and cannot be fou
 There are two Python scripts in the `generator` directory:  
   
 1. `download_db2.py` 
-- This downloads the necessary DB2 files as CSV from [https://wago.tools](Wago.Tools) to generate `Data.lua`.
+- This downloads the necessary DB2 files as CSV from [wago.tools](https://wago.tools) to generate `Data.lua`.
 - Has a required `--build` argument to specify which build of WoW you are targetting. 
 - Usage: `python3 download_db2.py --build 12.0.1.66838`
   
