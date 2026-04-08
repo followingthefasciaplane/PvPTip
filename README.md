@@ -12,6 +12,14 @@ PvP coefficient data is injected directly into spell tooltips. Three display mod
 - **Verbose**: Full details with raw multipliers, modifier aura sources, and effective values (work in progress)
 - **Minimal**: Just percentages: `PvP: -15% | -20%`
 
+## GUI Panel
+  
+Accessed via `/pvptip`, `/pt`, or the minimap button. Three tabs:  
+  
+- **Overview**: Detected & modified tooltips (based on your spec, to improve). This is going to miss most things. 
+- **Settings**: Tooltip mode, custom colors, enable/disable features.
+- **Lookup**: Advanced lookup of all known PvP modifiers parsed from Data.lua across every class. Select your own class to see a full list of active modifiers.
+
 ## To do
 
 - Item tooltips (trinkets, embellishments, enchants, gems)
@@ -63,15 +71,6 @@ PvPTip computes effective multipliers from three sources:
 3. **Layer 3 — Label-based modifiers** (EffectAura 649): Surgical PvP adjustments targeting spells by SpellLabel ID  
    
 **Formula**: `effective = base_pvp_mult * (1 + sum(layer2_values)/100 + sum(layer3_values)/100)`  
-  
-## GUI Panel
-  
-Accessed via `/pvptip`, `/pt`, or the minimap button. Three tabs:  
-  
-  - **Overview**: Detected & modified tooltips (based on your spec, to improve). This is going to miss most things. 
-  - **Settings**: Tooltip mode, custom colors, enable/disable features.
-  - **Lookup**: Advanced lookup of all known PvP modifiers parsed from Data.lua across every class. Select your own class to see a full list of active modifiers.
-
 
 ## License
 
