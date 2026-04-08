@@ -4,6 +4,8 @@ A World of Warcraft addon that reveals hidden PvP coefficients in tooltips and p
   
 Still heavily beta and needs more work! Lots of stuff is still missing or to-do.  
   
+<img width="1283" height="638" alt="Advanced tab" src="https://github.com/user-attachments/assets/657f8c04-c814-4320-b0fc-52cdb82d4c81" />
+
 ## Tooltip Mode  
   
 PvP coefficient data is injected directly into spell tooltips. Three display modes:  
@@ -11,6 +13,10 @@ PvP coefficient data is injected directly into spell tooltips. Three display mod
 - **Compact** (default): `PvP: Fire damage -15% | Shadow DoT -20%`  
 - **Verbose**: Full details with raw multipliers, modifier aura sources, and effective values (work in progress)
 - **Minimal**: Just percentages: `PvP: -15% | -20%`
+
+<img width="790" height="867" alt="Spellbook" src="https://github.com/user-attachments/assets/6cb59e01-cc7d-47d2-ad04-1609e080a73e" />
+<img width="438" height="376" alt="Talent tree" src="https://github.com/user-attachments/assets/4baa7325-a038-4ebd-9047-52dd760e65aa" />
+
 
 ## GUI Panel
   
