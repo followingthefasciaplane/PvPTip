@@ -2,6 +2,8 @@
   
 A World of Warcraft addon that reveals hidden PvP coefficients in tooltips and provides an interface for exploring PvP modifiers across all classes.  
   
+Still heavily beta and needs more work! Lots of stuff is still missing or to-do.  
+  
 ## Tooltip Mode  
   
 PvP coefficient data is injected directly into spell tooltips. Three display modes:  
@@ -12,7 +14,7 @@ PvP coefficient data is injected directly into spell tooltips. Three display mod
 
 ## To do
 
-- Item tooltips (trinkets, embellishments, enchants, gems) — `ItemEffect.csv` and `SpellItemEnchantment.csv` are already downloaded
+- Item tooltips (trinkets, embellishments, enchants, gems)
 - Racials, consumables (flasks, potions)
 - Tier set PvP coefficient display
 - Child spell expansion in tooltips (showing which spells a broader aura coefficient affects)
@@ -24,13 +26,13 @@ Unfortunately, this data can only be extracted from the client and cannot be fou
 There are two Python scripts in the `generator` directory:  
   
 1. `download_db2.py` 
-  - This downloads the necessary DB2 files as CSV from [https://wago.tools](Wago.Tools) to generate `Data.lua`.
-  - Has a required `--build` argument to specify which build of WoW you are targetting. 
-  - Usage: `python3 download_db2.py --build 12.0.1.66838`
+- This downloads the necessary DB2 files as CSV from [https://wago.tools](Wago.Tools) to generate `Data.lua`.
+- Has a required `--build` argument to specify which build of WoW you are targetting. 
+- Usage: `python3 download_db2.py --build 12.0.1.66838`
   
 2. `generate_data.py`
-  - This will parse the downloaded CSV files and output a new `Data.lua` to replace the existing one.
-  - Usage: `python3 PvPTip/tools/generate_data.py --db2 db2_raw --output PvPTip/Data.lua` where `db2_raw` is the directory containing CSV files.
+- This will parse the downloaded CSV files and output a new `Data.lua` to replace the existing one.
+- Usage: `python3 PvPTip/tools/generate_data.py --db2 db2_raw --output PvPTip/Data.lua` where `db2_raw` is the directory containing CSV files.
   
 ## Parsing Effect Data
   
@@ -47,18 +49,19 @@ Here's a small snippet of some example labels that are already implemented:
 | Effect=3 (Dummy), sibling=Stun | **Stun value -38%** |
   
 Labels are enriched with:
-  - **School names** from SpellMisc (Fire, Shadow, Frost, Nature, Arcane, Holy, Chaos)
-  - **Mechanic names** from SpellMechanic (bleeding, stunned, silenced, rooted, etc.)
-  - **Sibling-context inference** for generic effects (Dummy/Passive > inferred from other effects on the same spell, work in progress)
+- **School names** from SpellMisc (Fire, Shadow, Frost, Nature, Arcane, Holy, Chaos)
+- **Mechanic names** from SpellMechanic (bleeding, stunned, silenced, rooted, etc.)
+- **Sibling-context inference** for generic effects (Dummy/Passive > inferred from other effects on the same spell, work in progress)
 
 ## Three Layer Effective Multipliers
   
 PvPTip computes effective multipliers from three sources:  
   
-1. **Layer 1 — Base coefficient**: `SpellEffect.PvpMultiplier` per effect (4,471 modified effects across 3,323 spells)  
-2. **Layer 2 — Modifier auras** (EffectAura 647): Class passives, tier sets, and talents that modify PvP multipliers via SpellClassMask targeting  
+1. **Layer 1 — Base coefficient**: `SpellEffect.PvpMultiplier` per effect (4,471 modified effects across 3,323 spells)   
+2. **Layer 2 — Modifier auras** (EffectAura 647): Class passives, tier sets, and talents that modify PvP multipliers via SpellClassMask targeting
+   
 3. **Layer 3 — Label-based modifiers** (EffectAura 649): Surgical PvP adjustments targeting spells by SpellLabel ID  
-  
+   
 **Formula**: `effective = base_pvp_mult * (1 + sum(layer2_values)/100 + sum(layer3_values)/100)`  
   
 ## GUI Panel
@@ -69,32 +72,6 @@ Accessed via `/pvptip`, `/pt`, or the minimap button. Three tabs:
   - **Settings**: Tooltip mode, custom colors, enable/disable features.
   - **Lookup**: Advanced lookup of all known PvP modifiers parsed from Data.lua across every class. Select your own class to see a full list of active modifiers.
 
-## Minimap Button
-
-  - **Left-click**: Toggle GUI
-  - **Shift-click**: Toggle tooltip display
-  - **Right-click**: Cycle tooltip mode (compact > verbose > minimal)
-  - Draggable, position saved across sessions
-
-## Slash Commands
-
-| Command | Action |
-|---------|--------|
-| `/pvptip` or `/pt` | Toggle GUI window |
-| `/pvptip help` | Show help |
-| `/pvptip tooltip` | Toggle tooltip display |
-| `/pvptip mode <compact\|verbose\|minimal>` | Set tooltip mode |
-| `/pvptip status` | Show current status and build info |
-
-
-## Data Stats (current build)
-
-- **3,323** spells with PvP coefficients
-- **4,471** modified effects (347 buffs, 4,124 nerfs)
-- **40** PvP modifier auras (EffectAura 647/649)
-- **93** parent → child spell relationships
-- **428** spells affected by modifier aura layers
-- **36** mechanic types mapped
 
 ## License
 
