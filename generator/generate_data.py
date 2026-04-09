@@ -682,6 +682,117 @@ def build_spell_learn_overrides(rows):
     return overrides
 
 
+# ---------------------------------------------------------------------------
+# item & enchantment builders
+# ---------------------------------------------------------------------------
+
+
+def build_item_effects(item_effect_rows, item_x_item_effect_rows):
+    """Join ItemEffect + ItemXItemEffect to produce {item_id: [spell_id, ...]}."""
+    # map ItemEffectID -> spell_id
+    effect_spells = {}
+    for r in item_effect_rows:
+        effect_id = int(r["ID"])
+        spell_id = int(r.get("SpellID", 0))
+        if spell_id > 0:
+            effect_spells[effect_id] = spell_id
+
+    # map item_id -> [spell_id, ...]
+    item_spells = defaultdict(set)
+    for r in item_x_item_effect_rows:
+        item_id = int(r["ItemID"])
+        effect_id = int(r["ItemEffectID"])
+        spell_id = effect_spells.get(effect_id)
+        if spell_id:
+            item_spells[item_id].add(spell_id)
+
+    return {k: sorted(v) for k, v in item_spells.items()}
+
+
+def build_pvp_item_spells(item_effects, spells_table, parent_spells):
+    """Filter item->spell mappings to only items with PvP-relevant spells.
+
+    Returns: {item_id: [spell_id, ...]}
+    """
+    all_pvp = set(spells_table.keys()) | set(parent_spells.keys())
+    result = {}
+    for item_id, spell_ids in item_effects.items():
+        pvp_spells = [sid for sid in spell_ids if sid in all_pvp]
+        if pvp_spells:
+            result[item_id] = pvp_spells
+    return result
+
+
+def build_enchantment_spells(enchantment_rows):
+    """Extract spell IDs from SpellItemEnchantment effects.
+
+    Enchantments have up to 3 effects (Effect_0, Effect_1, Effect_2).
+    Effect type 3 = "Apply Spell" (EffectArg is the spell ID).
+    Effect type 1 = "Proc on Hit" (EffectArg is the spell ID).
+
+    Returns: {enchant_id: {n: name, spells: [spell_id, ...]}}
+    """
+    SPELL_EFFECT_TYPES = {1, 3}  # proc-on-hit, apply-spell
+    enchants = {}
+    for r in enchantment_rows:
+        eid = int(r["ID"])
+        name = r.get("Name_lang", f"Enchant #{eid}")
+        spells = set()
+        for i in range(3):
+            etype = int(r.get(f"Effect_{i}", 0))
+            earg = int(r.get(f"EffectArg_{i}", 0))
+            if etype in SPELL_EFFECT_TYPES and earg > 0:
+                spells.add(earg)
+        if spells:
+            enchants[eid] = {"n": name, "spells": sorted(spells)}
+    return enchants
+
+
+def build_pvp_enchantments(enchantments, spells_table, parent_spells):
+    """Filter enchantments to only those with PvP-relevant spells.
+
+    Returns: {enchant_id: {n: name, spells: [spell_id, ...]}}
+    """
+    all_pvp = set(spells_table.keys()) | set(parent_spells.keys())
+    result = {}
+    for eid, data in enchantments.items():
+        pvp_spells = [sid for sid in data["spells"] if sid in all_pvp]
+        if pvp_spells:
+            result[eid] = {"n": data["n"], "spells": pvp_spells}
+    return result
+
+
+def build_aura_options(aura_option_rows, spells_table):
+    """Extract diminishing returns and dispel type for PvP-relevant spells.
+
+    Returns: {spell_id: {dr: diminish_type, dispel: dispel_type}}
+    """
+    DR_TYPES = {
+        1: "Stun", 2: "Disorient", 3: "Silence", 4: "Incapacitate",
+        5: "Root", 6: "Fear", 7: "Knockback",
+    }
+    DISPEL_TYPES = {
+        0: "None", 1: "Magic", 2: "Curse", 3: "Disease",
+        4: "Poison", 5: "Stealth", 6: "Invisibility",
+        9: "Enrage",
+    }
+    result = {}
+    for r in aura_option_rows:
+        spell_id = int(r.get("SpellID", 0))
+        if spell_id not in spells_table:
+            continue
+        dr = int(r.get("DiminishType", 0))
+        dispel = int(r.get("DispelType", 0))
+        if dr > 0 or dispel > 0:
+            entry = {}
+            if dr > 0:
+                entry["dr"] = DR_TYPES.get(dr, f"DR#{dr}")
+            if dispel > 0:
+                entry["dispel"] = DISPEL_TYPES.get(dispel, f"Dispel#{dispel}")
+            result[spell_id] = entry
+    return result
+
+
 # playable class IDs (filters out Adventurer etc. from ChrSpecialization)
 PLAYABLE_CLASS_IDS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
 
@@ -736,7 +847,8 @@ def lua_float(val):
 
 
 def write_data_lua(path, spells, parents, mod_auras, mod_lookup,
-                   classes, spec_spells, build_version, spell_replacements=None):
+                   classes, spec_spells, build_version, spell_replacements=None,
+                   item_spells=None, enchant_spells=None, aura_options=None):
     """Write all data tables to Data.lua."""
     with open(path, "w", encoding="utf-8") as f:
         f.write("-- PvPTip Data.lua — AUTO-GENERATED, DO NOT EDIT\n")
@@ -837,7 +949,39 @@ def write_data_lua(path, spells, parents, mod_auras, mod_lookup,
             spells_list = spec_spells[spec_id]
             spells_str = ",".join(str(s) for s in spells_list)
             f.write(f"  [{spec_id}]={{{spells_str}}},\n")
-        f.write("}\n")
+        f.write("}\n\n")
+
+        # ItemSpells table (item_id -> list of PvP-relevant spell IDs)
+        if item_spells:
+            f.write(f"PvPTipData.ItemSpells = {{\n")
+            for item_id in sorted(item_spells.keys()):
+                spell_ids = item_spells[item_id]
+                spells_str = ",".join(str(s) for s in spell_ids)
+                f.write(f"  [{item_id}]={{{spells_str}}},\n")
+            f.write("}\n\n")
+
+        # EnchantSpells table (enchant_id -> {n=name, spells={...}})
+        if enchant_spells:
+            f.write(f"PvPTipData.EnchantSpells = {{\n")
+            for eid in sorted(enchant_spells.keys()):
+                data = enchant_spells[eid]
+                name = lua_string(data["n"])
+                spells_str = ",".join(str(s) for s in data["spells"])
+                f.write(f'  [{eid}]={{n="{name}",spells={{{spells_str}}}}},\n')
+            f.write("}\n\n")
+
+        # AuraOptions table (spell_id -> {dr=type, dispel=type})
+        if aura_options:
+            f.write(f"PvPTipData.AuraOptions = {{\n")
+            for spell_id in sorted(aura_options.keys()):
+                opts = aura_options[spell_id]
+                parts = []
+                if "dr" in opts:
+                    parts.append(f'dr="{lua_string(opts["dr"])}"')
+                if "dispel" in opts:
+                    parts.append(f'dispel="{lua_string(opts["dispel"])}"')
+                f.write(f"  [{spell_id}]={{{','.join(parts)}}},\n")
+            f.write("}\n")
 
     return True
 
@@ -934,6 +1078,31 @@ def main():
         spell_learn_overrides = build_spell_learn_overrides(learn_rows)
         print(f"  SpellLearnSpell: {len(spell_learn_overrides):,} overrides")
 
+    # load item & enchantment tables
+    item_effect_rows = []
+    item_effect_path = os.path.join(db2, "ItemEffect.csv")
+    if os.path.exists(item_effect_path):
+        item_effect_rows = load_csv(item_effect_path)
+        print(f"  ItemEffect: {len(item_effect_rows):,} rows")
+
+    item_x_rows = []
+    item_x_path = os.path.join(db2, "ItemXItemEffect.csv")
+    if os.path.exists(item_x_path):
+        item_x_rows = load_csv(item_x_path)
+        print(f"  ItemXItemEffect: {len(item_x_rows):,} rows")
+
+    enchant_rows = []
+    enchant_path = os.path.join(db2, "SpellItemEnchantment.csv")
+    if os.path.exists(enchant_path):
+        enchant_rows = load_csv(enchant_path)
+        print(f"  SpellItemEnchantment: {len(enchant_rows):,} rows")
+
+    aura_opt_rows = []
+    aura_opt_path = os.path.join(db2, "SpellAuraOptions.csv")
+    if os.path.exists(aura_opt_path):
+        aura_opt_rows = load_csv(aura_opt_path)
+        print(f"  SpellAuraOptions: {len(aura_opt_rows):,} rows")
+
     # filter PvP effects
     print("\nProcessing...")
     pvp_effects = filter_pvp_effects(effect_rows)
@@ -972,10 +1141,30 @@ def main():
     spec_spells = build_spec_spells_filtered(spec_spells_map, spells, parents)
     print(f"  Specs with PvP spells: {len(spec_spells):,}")
 
+    # build item & enchantment tables
+    item_spells = {}
+    if item_effect_rows and item_x_rows:
+        all_item_effects = build_item_effects(item_effect_rows, item_x_rows)
+        item_spells = build_pvp_item_spells(all_item_effects, spells, parents)
+        print(f"  Items with PvP-relevant spells: {len(item_spells):,}")
+
+    enchant_spells = {}
+    if enchant_rows:
+        all_enchants = build_enchantment_spells(enchant_rows)
+        enchant_spells = build_pvp_enchantments(all_enchants, spells, parents)
+        print(f"  Enchantments with PvP-relevant spells: {len(enchant_spells):,}")
+
+    aura_options = {}
+    if aura_opt_rows:
+        aura_options = build_aura_options(aura_opt_rows, spells)
+        print(f"  Spells with DR/dispel data: {len(aura_options):,}")
+
     # write output
     print(f"\nWriting {args.output}...")
     write_data_lua(args.output, spells, parents, mod_auras, mod_lookup,
-                   classes, spec_spells, build_version, combined_replacements)
+                   classes, spec_spells, build_version, combined_replacements,
+                   item_spells=item_spells, enchant_spells=enchant_spells,
+                   aura_options=aura_options)
 
     # stats
     total_effects = sum(len(s["e"]) for s in spells.values())

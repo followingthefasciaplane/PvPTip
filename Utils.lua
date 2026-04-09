@@ -75,26 +75,32 @@ function U.ResolveSpellID(spellID)
 end
 
 -------------------------------------------------------------------------------
--- PvP multiplier computation
+-- affected-by lookup (modifier auras that target a spell)
 -------------------------------------------------------------------------------
 
-function U.ComputeEffectivePvpMult(spellID, baseMult)
-    -- apply modifier auras from SpellModLookup
-    -- formula: effective = baseMult * (1 + sum(mod_values) / 100)
-    if not PvPTipData or not PvPTipData.SpellModLookup then
-        return baseMult
-    end
+function U.GetAffectedBy(spellID)
+    -- returns list of {name, type, value} for modifier auras affecting this spell
+    -- returns nil if no modifiers exist
+    if not PvPTipData or not PvPTipData.SpellModLookup then return nil end
 
     local mods = PvPTipData.SpellModLookup[spellID]
-    if not mods then return baseMult end
+    if not mods or #mods == 0 then return nil end
 
-    local totalMod = 0
+    local result = {}
     for _, entry in ipairs(mods) do
         -- entry = {auraSpellID, modType, modValue}
-        totalMod = totalMod + entry[3]
+        local auraName = "Unknown"
+        if PvPTipData.PvpModAuras and PvPTipData.PvpModAuras[entry[1]] then
+            auraName = PvPTipData.PvpModAuras[entry[1]].n
+        end
+        table.insert(result, {
+            name = auraName,
+            type = entry[2],
+            value = entry[3],
+            auraID = entry[1],
+        })
     end
-
-    return baseMult * (1 + totalMod / 100)
+    return result
 end
 
 -------------------------------------------------------------------------------
@@ -122,44 +128,36 @@ function U.GetCoeffColor(mult, cfg)
 end
 
 function U.FormatEffectCompact(eff, spellID)
-    -- returns "Damage +74%" or "DoT -15%"
-    local effectiveMult = U.ComputeEffectivePvpMult(spellID, eff.p)
-    local pctStr = U.FormatPct(effectiveMult)
-    return eff.t .. " " .. pctStr, effectiveMult
+    -- returns "Damage +7%" or "DoT -15%" using raw base coefficient
+    local pctStr = U.FormatPct(eff.p)
+    return eff.t .. " " .. pctStr, eff.p
 end
 
 function U.FormatEffectVerbose(eff, spellID)
-    -- returns "#0 Damage: PvP 1.275 (+27%) [Arms Warrior +20% > effective +53%]"
-    local baseMult = eff.p
-    local effectiveMult = U.ComputeEffectivePvpMult(spellID, baseMult)
-    local basePct = U.FormatPct(baseMult)
-    local effPct = U.FormatPct(effectiveMult)
-
-    local line = string.format("#%d %s: PvP %.3f (%s)", eff.i, eff.t, baseMult, basePct)
-
-    -- add modifier info if different from base
-    if math.abs(effectiveMult - baseMult) > 0.001 then
-        local mods = PvPTipData.SpellModLookup and PvPTipData.SpellModLookup[spellID]
-        if mods then
-            local modParts = {}
-            for _, entry in ipairs(mods) do
-                local auraName = "Unknown"
-                local auraData = PvPTipData.PvpModAuras and PvPTipData.PvpModAuras[entry[1]]
-                if auraData then auraName = auraData.n end
-                local sign = entry[3] >= 0 and "+" or ""
-                table.insert(modParts, auraName .. " " .. sign .. entry[3] .. "%")
-            end
-            line = line .. " [" .. table.concat(modParts, ", ") .. " -> " .. effPct .. "]"
-        end
-    end
-
-    return line, effectiveMult
+    -- returns "#0 Damage: PvP 1.07 (+7%)" using raw base coefficient
+    -- affected-by modifiers are displayed separately by the caller
+    local basePct = U.FormatPct(eff.p)
+    local line = string.format("#%d %s: PvP %.3f (%s)", eff.i, eff.t, eff.p, basePct)
+    return line, eff.p
 end
 
 function U.FormatEffectMinimal(eff, spellID)
-    -- returns just "+74%" or "-15%"
-    local effectiveMult = U.ComputeEffectivePvpMult(spellID, eff.p)
-    return U.FormatPct(effectiveMult), effectiveMult
+    -- returns just "+7%" or "-15%" using raw base coefficient
+    return U.FormatPct(eff.p), eff.p
+end
+
+function U.FormatAffectedBy(spellID)
+    -- returns formatted string of modifier auras, or nil if none
+    local mods = U.GetAffectedBy(spellID)
+    if not mods then return nil end
+
+    local parts = {}
+    for _, mod in ipairs(mods) do
+        local sign = mod.value >= 0 and "+" or ""
+        local typeTag = mod.type == "label" and "label" or "mask"
+        table.insert(parts, mod.name .. " " .. sign .. mod.value .. "% (" .. typeTag .. ")")
+    end
+    return table.concat(parts, ", ")
 end
 
 -------------------------------------------------------------------------------

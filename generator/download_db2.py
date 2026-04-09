@@ -8,16 +8,29 @@ import urllib.request
 
 # tables used by generate_data.py
 TABLES = [
+    # core spell data
     "SpellEffect",
     "SpellName",
     "SpellClassOptions",
-    "ChrSpecialization",
-    "SpecializationSpells",
     "SpellLabel",
     "SpellMechanic",
     "SpellMisc",
     "SpellReplacement",
     "SpellLearnSpell",
+    # class & spec
+    "ChrSpecialization",
+    "SpecializationSpells",
+    # item & enchantment data
+    "ItemEffect",
+    "ItemXItemEffect",
+    "SpellItemEnchantment",
+    # aura & spell metadata
+    "SpellAuraOptions",
+    "SpellPower",
+    "SpellCooldowns",
+    "SpellCategories",
+    "SpellEquippedItems",
+    "SpellShapeshift",
 ]
 
 DEFAULT_OUTPUT = os.path.join(os.path.dirname(__file__), "..", "..", "db2_raw")

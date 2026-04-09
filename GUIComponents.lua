@@ -570,6 +570,26 @@ function UI.CreateSpellRow(parent, spellID, name, effectsText, r, g, b)
 end
 
 -------------------------------------------------------------------------------
+-- affected-by sub-row (dimmed modifier aura listing below a spell row)
+-------------------------------------------------------------------------------
+
+function UI.CreateAffectedByRow(parent, text)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetHeight(UI.Sizes.rowH - 4)
+
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("LEFT", frame, "LEFT", 28, 0)
+    label:SetPoint("RIGHT", frame, "RIGHT", -4, 0)
+    label:SetJustifyH("LEFT")
+    label:SetWordWrap(false)
+    label:SetText(text)
+    label:SetTextColor(0.45, 0.45, 0.45)
+    frame.label = label
+
+    return frame
+end
+
+-------------------------------------------------------------------------------
 -- color swatch that opens ColorPickerFrame
 -------------------------------------------------------------------------------
 

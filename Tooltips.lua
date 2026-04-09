@@ -38,6 +38,9 @@ local function AddPvPLines(tooltip, spellID)
 
     local hr, hg, hb = cfg.colors.header[1], cfg.colors.header[2], cfg.colors.header[3]
 
+    -- collect spellIDs to check for affected-by (may be multiple children)
+    local affectedByIDs = {}
+
     if isParent then
         -- parent spell: show children's coefficients
         local children = PvPTipData.SpellParents[resolvedID]
@@ -50,14 +53,14 @@ local function AddPvPLines(tooltip, spellID)
             local childData = PvPTipData.Spells[childID]
             if childData then
                 for _, eff in ipairs(childData.e) do
-                    local effectiveMult = U.ComputeEffectivePvpMult(childID, eff.p)
-                    if math.abs(effectiveMult - 1.0) > 0.001 then
+                    if math.abs(eff.p - 1.0) > 0.001 then
                         anyData = true
                         local text, mult = FormatEffect(eff, childID, cfg)
                         local r, g, b = U.GetCoeffColor(mult, cfg)
                         table.insert(allParts, {text = text, r = r, g = g, b = b, mult = mult})
                     end
                 end
+                affectedByIDs[childID] = true
             end
         end
 
@@ -73,7 +76,7 @@ local function AddPvPLines(tooltip, spellID)
             end
         end
 
-        AddFormattedLines(tooltip, unique, cfg, hr, hg, hb)
+        AddFormattedLines(tooltip, unique, cfg, hr, hg, hb, affectedByIDs)
     else
         -- direct spell
         local spellData = PvPTipData.Spells[resolvedID]
@@ -81,8 +84,7 @@ local function AddPvPLines(tooltip, spellID)
 
         local parts = {}
         for _, eff in ipairs(spellData.e) do
-            local effectiveMult = U.ComputeEffectivePvpMult(resolvedID, eff.p)
-            if math.abs(effectiveMult - 1.0) > 0.001 then
+            if math.abs(eff.p - 1.0) > 0.001 then
                 local text, mult = FormatEffect(eff, resolvedID, cfg)
                 local r, g, b = U.GetCoeffColor(mult, cfg)
                 table.insert(parts, {text = text, r = r, g = g, b = b, mult = mult})
@@ -91,7 +93,8 @@ local function AddPvPLines(tooltip, spellID)
 
         if #parts == 0 then return end
 
-        AddFormattedLines(tooltip, parts, cfg, hr, hg, hb)
+        affectedByIDs[resolvedID] = true
+        AddFormattedLines(tooltip, parts, cfg, hr, hg, hb, affectedByIDs)
     end
 end
 
@@ -114,7 +117,7 @@ end
 -- add formatted lines to tooltip
 -------------------------------------------------------------------------------
 
-function AddFormattedLines(tooltip, parts, cfg, hr, hg, hb)
+function AddFormattedLines(tooltip, parts, cfg, hr, hg, hb, affectedByIDs)
     local mode = cfg.tooltipMode
 
     if mode == "verbose" then
@@ -182,6 +185,34 @@ function AddFormattedLines(tooltip, parts, cfg, hr, hg, hb)
                 for _, part in ipairs(parts) do
                     tooltip:AddLine("  " .. part.text, part.r, part.g, part.b)
                 end
+            end
+        end
+    end
+
+    -- affected-by: show modifier auras (compact & verbose only, skip minimal)
+    if mode ~= "minimal" and affectedByIDs then
+        local seenMods = {}
+        local modLines = {}
+        for spellID in pairs(affectedByIDs) do
+            local affectedBy = U.GetAffectedBy(spellID)
+            if affectedBy then
+                for _, mod in ipairs(affectedBy) do
+                    local key = mod.auraID .. mod.type
+                    if not seenMods[key] then
+                        seenMods[key] = true
+                        local sign = mod.value >= 0 and "+" or ""
+                        local typeTag = mod.type == "label" and "label" or "mask"
+                        table.insert(modLines, string.format("  %s %s%s%% (%s)",
+                            mod.name, sign, mod.value, typeTag))
+                    end
+                end
+            end
+        end
+        if #modLines > 0 then
+            local nr, ng, nb = cfg.colors.neutral[1], cfg.colors.neutral[2], cfg.colors.neutral[3]
+            tooltip:AddLine("Affected by:", nr * 0.8, ng * 0.8, nb * 0.8)
+            for _, line in ipairs(modLines) do
+                tooltip:AddLine(line, nr * 0.7, ng * 0.7, nb * 0.7)
             end
         end
     end

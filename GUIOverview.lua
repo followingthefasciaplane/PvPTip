@@ -248,19 +248,18 @@ function PvPTip.RefreshOverview()
             end
 
             if relevant then
-                -- build effect summary
+                -- build effect summary using raw base coefficients
                 local parts = {}
                 local maxDeviation = 0
                 local mainMult = 1
 
                 for _, eff in ipairs(spellData.e) do
-                    local effectiveMult = U.ComputeEffectivePvpMult(spellID, eff.p)
-                    if math.abs(effectiveMult - 1.0) > 0.001 then
-                        table.insert(parts, eff.t .. " " .. U.FormatPct(effectiveMult))
-                        local dev = math.abs(effectiveMult - 1.0)
+                    if math.abs(eff.p - 1.0) > 0.001 then
+                        table.insert(parts, eff.t .. " " .. U.FormatPct(eff.p))
+                        local dev = math.abs(eff.p - 1.0)
                         if dev > maxDeviation then
                             maxDeviation = dev
-                            mainMult = effectiveMult
+                            mainMult = eff.p
                         end
                     end
                 end
@@ -292,16 +291,15 @@ function PvPTip.RefreshOverview()
                         local childData = PvPTipData.Spells[childID]
                         if childData then
                             for _, eff in ipairs(childData.e) do
-                                local effectiveMult = U.ComputeEffectivePvpMult(childID, eff.p)
-                                if math.abs(effectiveMult - 1.0) > 0.001 then
-                                    local text = eff.t .. " " .. U.FormatPct(effectiveMult)
+                                if math.abs(eff.p - 1.0) > 0.001 then
+                                    local text = eff.t .. " " .. U.FormatPct(eff.p)
                                     local dup = false
                                     for _, ex in ipairs(allParts) do
                                         if ex == text then dup = true; break end
                                     end
                                     if not dup then table.insert(allParts, text) end
-                                    local dev = math.abs(effectiveMult - 1.0)
-                                    if dev > maxDev then maxDev = dev; mainMult = effectiveMult end
+                                    local dev = math.abs(eff.p - 1.0)
+                                    if dev > maxDev then maxDev = dev; mainMult = eff.p end
                                 end
                             end
                         end
@@ -351,6 +349,17 @@ function PvPTip.RefreshOverview()
         row:Show()
         table.insert(spellRows, row)
         yOff = yOff + UI.Sizes.rowH
+
+        -- affected-by sub-row
+        local affectedStr = U.FormatAffectedBy(spell.id)
+        if affectedStr then
+            local abRow = UI.CreateAffectedByRow(scrollChild, "Affected by: " .. affectedStr)
+            abRow:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOff)
+            abRow:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOff)
+            abRow:Show()
+            table.insert(spellRows, abRow)
+            yOff = yOff + UI.Sizes.rowH - 4
+        end
     end
 
     scrollContainer:SetContentHeight(yOff + 20)
