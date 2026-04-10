@@ -7,16 +7,19 @@ local U = PvPTip.Utils
 -------------------------------------------------------------------------------
 
 local function HasPvPTipLines(tooltip)
-    for i = 1, tooltip:NumLines() do
-        local left = _G[tooltip:GetName() .. "TextLeft" .. i]
-        if left then
-            local text = left:GetText()
-            if text and (text:find("PvP:") or text:find("PvP Coefficients")) then
-                return true
+    local ok, result = pcall(function()
+        for i = 1, tooltip:NumLines() do
+            local left = _G[tooltip:GetName() .. "TextLeft" .. i]
+            if left then
+                local text = left:GetText()
+                if text and (text:find("PvP:") or text:find("PvP Coefficients")) then
+                    return true
+                end
             end
         end
-    end
-    return false
+        return false
+    end)
+    return ok and result
 end
 
 -------------------------------------------------------------------------------
@@ -24,7 +27,10 @@ end
 -------------------------------------------------------------------------------
 
 local function AddPvPLines(tooltip, spellID)
-    if not spellID or spellID == 0 then return end
+    local sid = tonumber(spellID)
+    if not sid or sid == 0 then return end
+    spellID = sid
+
     if not PvPTipData then return end
 
     local cfg = PvPTip.GetConfig()
@@ -247,7 +253,9 @@ if TooltipDataProcessor then
         function(tooltip, data)
             if tooltip ~= GameTooltip then return end
             if not data or not data.id then return end
-            AddPvPLines(tooltip, data.id)
+            local sid = tonumber(data.id)
+            if not sid or sid == 0 then return end
+            AddPvPLines(tooltip, sid)
         end
     )
 end
@@ -313,19 +321,6 @@ if TalentDisplayMixin then
     end)
 end
 
--- PvP talent tooltips.. do they ever scale these? if they do, i cant figure out how to do this correctly
-if PvPTalentSlotMixin then
-    hook(PvPTalentSlotMixin, "OnEnter", function(self)
-        local talentID = self.talentID
-        if talentID then
-            local _, name, icon, selected, available, spellID = GetPvpTalentInfoByID(talentID)
-            if spellID then
-                AddPvPLines(GameTooltip, spellID)
-            end
-        end
-    end)
-end
-
 -------------------------------------------------------------------------------
 -- unit aura tooltip hooks (buffs/debuffs on unit frames)
 -------------------------------------------------------------------------------
@@ -336,7 +331,9 @@ if TooltipDataProcessor then
         function(tooltip, data)
             if tooltip ~= GameTooltip then return end
             if not data or not data.id then return end
-            AddPvPLines(tooltip, data.id)
+            local sid = tonumber(data.id)
+            if not sid or sid == 0 then return end
+            AddPvPLines(tooltip, sid)
         end
     )
 end
