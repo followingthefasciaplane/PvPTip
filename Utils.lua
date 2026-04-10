@@ -181,9 +181,32 @@ U.CLASS_COLORS = {
     [13] = {0.20, 0.58, 0.50}, -- Evoker
 }
 
--- SpellClassSet > ClassID mapping
+-- Fallback mappings for cases where generated data is unavailable.
+U.CLASS_TO_FAMILY_FALLBACK = {
+    [1] = 4,
+    [2] = 10,
+    [3] = 9,
+    [4] = 8,
+    [5] = 6,
+    [6] = 15,
+    [7] = 11,
+    [8] = 3,
+    [9] = 5,
+    [10] = 53,
+    [11] = 7,
+    [12] = 107,
+    [13] = 224,
+}
+
 U.FAMILY_TO_CLASS = {
     [3] = 8, [4] = 1, [5] = 9, [6] = 5, [7] = 11,
-    [8] = 4, [9] = 3, [10] = 2, [11] = 7, [13] = 10,
-    [15] = 6, [33] = 12, [53] = 13,
+    [8] = 4, [9] = 3, [10] = 2, [11] = 7, [15] = 6,
+    [53] = 10, [107] = 12, [224] = 13,
 }
+
+function U.GetClassFamily(classID)
+    if PvPTipData and PvPTipData.ClassFamilies and PvPTipData.ClassFamilies[classID] then
+        return PvPTipData.ClassFamilies[classID]
+    end
+    return U.CLASS_TO_FAMILY_FALLBACK[classID] or 0
+end

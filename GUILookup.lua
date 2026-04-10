@@ -80,14 +80,7 @@ local function CollectSpells()
         return {}
     end
 
-    -- get the class family for this class
-    local classFamily = 0
-    for family, cid in pairs(U.FAMILY_TO_CLASS) do
-        if cid == selectedClassID then
-            classFamily = family
-            break
-        end
-    end
+    local classFamily = U.GetClassFamily(selectedClassID)
 
     local spellList = {}
     local seen = {}

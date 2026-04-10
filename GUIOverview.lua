@@ -208,14 +208,7 @@ function PvPTip.RefreshOverview()
     -- enumerate players known spells via runtime API
     local playerKnown = EnumeratePlayerKnownSpells()
 
-    -- get class family
-    local classFamily = 0
-    for family, cid in pairs(U.FAMILY_TO_CLASS) do
-        if cid == classID then
-            classFamily = family
-            break
-        end
-    end
+    local classFamily = U.GetClassFamily(classID)
 
     -- gather spells: only those the player actually knows or has active
     local spellList = {}

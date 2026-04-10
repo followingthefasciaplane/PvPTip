@@ -2,7 +2,7 @@
 ## Title: PvPTip
 ## Notes: Find hidden spell PvP modifiers for spells and more
 ## Author: feedbacker
-## Version: 2.0.0
+## Version: 2.0.1
 ## SavedVariables: PvPTipDB
 ## IconTexture: Interface\ICONS\Ability_pvp_gladiatormedallion
 
