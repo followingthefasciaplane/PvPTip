@@ -22,6 +22,16 @@ local function HasPvPTipLines(tooltip)
     return ok and result
 end
 
+local function GetTooltipSpellID(tooltip)
+    if not tooltip or not tooltip.GetSpell then return end
+
+    local _, spellID = tooltip:GetSpell()
+    local sid = tonumber(spellID)
+    if sid and sid > 0 then
+        return sid
+    end
+end
+
 -------------------------------------------------------------------------------
 -- add PvP coefficient lines to a tooltip
 -------------------------------------------------------------------------------
@@ -252,9 +262,8 @@ if TooltipDataProcessor then
         Enum.TooltipDataType.Spell,
         function(tooltip, data)
             if tooltip ~= GameTooltip then return end
-            if not data or not data.id then return end
-            local sid = tonumber(data.id)
-            if not sid or sid == 0 then return end
+            local sid = GetTooltipSpellID(tooltip)
+            if not sid then return end
             AddPvPLines(tooltip, sid)
         end
     )
@@ -330,9 +339,8 @@ if TooltipDataProcessor then
         Enum.TooltipDataType.UnitAura,
         function(tooltip, data)
             if tooltip ~= GameTooltip then return end
-            if not data or not data.id then return end
-            local sid = tonumber(data.id)
-            if not sid or sid == 0 then return end
+            local sid = GetTooltipSpellID(tooltip)
+            if not sid then return end
             AddPvPLines(tooltip, sid)
         end
     )
