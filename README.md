@@ -68,19 +68,4 @@ Here's a small snippet of some example labels that are already implemented:
 Labels are enriched with:
 - **School names** from SpellMisc (Fire, Shadow, Frost, Nature, Arcane, Holy, Chaos)
 - **Mechanic names** from SpellMechanic (bleeding, stunned, silenced, rooted, etc.)
-- **Sibling-context inference** for generic effects (Dummy/Passive > inferred from other effects on the same spell, work in progress)
-
-## Three Layer Effective Multipliers
-  
-PvPTip computes effective multipliers from three sources:  
-  
-1. **Layer 1 — Base coefficient**: `SpellEffect.PvpMultiplier` per effect (4,471 modified effects across 3,323 spells)   
-2. **Layer 2 — Modifier auras** (EffectAura 647): Class passives, tier sets, and talents that modify PvP multipliers via SpellClassMask targeting
-   
-3. **Layer 3 — Label-based modifiers** (EffectAura 649): Surgical PvP adjustments targeting spells by SpellLabel ID  
-   
-**Formula**: `effective = base_pvp_mult * (1 + sum(layer2_values)/100 + sum(layer3_values)/100)`  
-
-## License
-
-The Unlicense
+- **Sibling-context inference** for generic effects (Dummy/Passive > inferred from other effects on the same spell, work in progress) 
