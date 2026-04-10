@@ -12,7 +12,7 @@ Accessed via `/pvptip`, `/pt`, or the minimap button. Three tabs:
 - **Settings**: Tooltip mode, custom colors, enable/disable features.
 - **Lookup**: Advanced lookup of all known PvP modifiers parsed from Data.lua across every class. Select your own class to see a full list of active modifiers.
 
-<img width="804" height="591" alt="image" src="https://github.com/user-attachments/assets/efb2c0fc-a99d-41ee-aba2-ad2a9bfed03f" />
+<img width="954" height="628" alt="image" src="https://github.com/user-attachments/assets/b2f40d66-c4a6-4e42-a850-5e96bdcd58bc" />
 
 ## Tooltip Mode  
   
