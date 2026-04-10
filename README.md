@@ -4,8 +4,6 @@ A World of Warcraft addon that reveals hidden PvP coefficients in tooltips and p
   
 Still heavily beta and needs more work! Lots of stuff is still missing or to-do.  
   
-
-
 ## GUI Panel
   
 Accessed via `/pvptip`, `/pt`, or the minimap button. Three tabs:  
@@ -36,36 +34,4 @@ PvP coefficient data is injected directly into spell tooltips. Three display mod
 - Map and translate more effects to human readable labels
 - A million other things
   
-## Updating / Changing Data For Different Builds
-  
-Unfortunately, this data can only be extracted from the client and cannot be found via the API. This means that updates will have to be done manually.  
-  
-There are two Python scripts in the `generator` directory:  
-  
-1. `download_db2.py` 
-- This downloads the necessary DB2 files as CSV from [wago.tools](https://wago.tools) to generate `Data.lua`.
-- Has a required `--build` argument to specify which build of WoW you are targetting. 
-- Usage: `python3 download_db2.py --build 12.0.1.66838`
-  
-2. `generate_data.py`
-- This will parse the downloaded CSV files and output a new `Data.lua` to replace the existing one.
-- Usage: `python3 PvPTip/tools/generate_data.py --db2 db2_raw --output PvPTip/Data.lua` where `db2_raw` is the directory containing CSV files.
-  
-## Parsing Effect Data
-  
-Raw DB2 data is translated into player-facing descriptions. This is a manual process and there are many missing entries. I will continue to add more support over time.  
 
-Here's a small snippet of some example labels that are already implemented:  
-  
-| Raw DB2 | PvPTip Shows |
-|---------|-------------|
-| Effect=2, SchoolMask=4, PvpMult=1.068 | **Fire damage +7%** |
-| Effect=6, Aura=3, SchoolMask=1, Mechanic=15 | **Physical DoT (bleeding) -15%** |
-| Effect=6, Aura=69, PvpMult=0.6 | **Absorb value -40%** |
-| Effect=6, Aura=108, MiscVal=0, PvpMult=0.5 | **Spell power -50%** |
-| Effect=3 (Dummy), sibling=Stun | **Stun value -38%** |
-  
-Labels are enriched with:
-- **School names** from SpellMisc (Fire, Shadow, Frost, Nature, Arcane, Holy, Chaos)
-- **Mechanic names** from SpellMechanic (bleeding, stunned, silenced, rooted, etc.)
-- **Sibling-context inference** for generic effects (Dummy/Passive > inferred from other effects on the same spell, work in progress) 
