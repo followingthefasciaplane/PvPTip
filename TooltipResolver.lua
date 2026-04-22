@@ -341,12 +341,10 @@ local function BuildTalentSpellIDs(context)
         end
     end
 
-    if context.talentID and C_SpecializationInfo and C_SpecializationInfo.GetPvpTalentInfo then
-        local talentInfo = C_SpecializationInfo.GetPvpTalentInfo(context.talentID)
-        if talentInfo then
-            AddExpandedSpellIDs(spellSet, talentInfo.spellID)
-            AddExpandedSpellIDs(spellSet, talentInfo.overridesSpellID)
-        end
+    local liveTalentInfo = U.GetLivePvpTalentInfo(context.talentID)
+    if liveTalentInfo then
+        AddExpandedSpellIDs(spellSet, liveTalentInfo.spellID)
+        AddExpandedSpellIDs(spellSet, liveTalentInfo.overridesSpellID)
     end
 
     return CopySpellIDs(spellSet)
@@ -442,7 +440,7 @@ local function CollectSelectedPvpTalentLinks()
     for _, talentID in ipairs(C_SpecializationInfo.GetAllSelectedPvpTalentIDs() or {}) do
         local numericTalentID = ToNumber(talentID)
         local retained = retainedTalents[numericTalentID or 0]
-        local liveInfo = C_SpecializationInfo.GetPvpTalentInfo and C_SpecializationInfo.GetPvpTalentInfo(numericTalentID) or nil
+        local liveInfo = U.GetLivePvpTalentInfo(numericTalentID)
         local resolvedSpellSet = {}
 
         if retained then
@@ -509,7 +507,7 @@ local function BuildKnownSpellIndex()
     if spellBank and C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines and C_SpellBook.GetSpellBookSkillLineInfo then
         local lineCount = C_SpellBook.GetNumSpellBookSkillLines() or 0
         for lineIndex = 1, lineCount do
-            local lineInfo = C_SpellBook.GetSpellBookSkillLineInfo(lineIndex)
+            local lineInfo = U.GetLiveSpellBookSkillLineInfo(lineIndex)
             local startIndex = lineInfo and (tonumber(lineInfo.itemIndexOffset) or 0) + 1 or nil
             local numItems = lineInfo and (tonumber(lineInfo.numSpellBookItems) or 0) or 0
             if startIndex then

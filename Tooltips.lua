@@ -35,19 +35,40 @@ end
 
 local function BuildGroupDisplay(group, cfg)
     local rows, strongestCoefficient = U.GetGroupPvpRows(group, cfg.tooltipMode)
-    if #rows == 0 then
+    local durationRows = {}
+    local seenDurations = {}
+
+    local function AddDurationRow(spellID)
+        local text = U.FormatPvpDurationForSpell(spellID, cfg.tooltipMode)
+        if not text or seenDurations[text] then
+            return
+        end
+        seenDurations[text] = true
+        table.insert(durationRows, text)
+    end
+
+    AddDurationRow(group and group.baseSpellID)
+    for _, spellID in ipairs(group and group.resolvedSpellIDs or {}) do
+        AddDurationRow(spellID)
+    end
+
+    if #rows == 0 and #durationRows == 0 then
         return nil
     end
 
     return {
         group = group,
         rows = rows,
+        durationRows = durationRows,
         strongestCoefficient = strongestCoefficient,
     }
 end
 
 local function CanRenderSingleLine(display)
     if not display then
+        return false
+    end
+    if display.durationRows and #display.durationRows > 0 then
         return false
     end
     if #display.rows ~= 1 then
@@ -81,6 +102,15 @@ local function AddGroupBlock(tooltip, display, cfg, multipleGroups)
             1,
             group.name,
             cfg.colors.header[1], cfg.colors.header[2], cfg.colors.header[3]
+        )
+    end
+
+    for _, durationText in ipairs(display.durationRows or {}) do
+        AddIndentedLine(
+            tooltip,
+            baseIndent + 1,
+            durationText,
+            cfg.colors.neutral[1], cfg.colors.neutral[2], cfg.colors.neutral[3]
         )
     end
 

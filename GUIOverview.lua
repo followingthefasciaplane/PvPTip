@@ -26,7 +26,7 @@ local function EnumeratePlayerKnownSpells()
     if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
         local numLines = C_SpellBook.GetNumSpellBookSkillLines()
         for lineIndex = 1, numLines do
-            local lineInfo = C_SpellBook.GetSpellBookSkillLineInfo(lineIndex)
+            local lineInfo = U.GetLiveSpellBookSkillLineInfo(lineIndex)
             if lineInfo then
                 local startIndex = lineInfo.itemIndexOffset + 1
                 for slot = startIndex, startIndex + lineInfo.numSpellBookItems - 1 do
@@ -78,11 +78,10 @@ local function EnumeratePlayerKnownSpells()
                 end
             end
 
-            if C_SpecializationInfo.GetPvpTalentInfo then
-                local talentInfo = C_SpecializationInfo.GetPvpTalentInfo(talentID)
-                if talentInfo then
-                    AddSpellID(knownSpellIDs, seen, talentInfo.spellID)
-                end
+            local talentInfo = U.GetLivePvpTalentInfo(talentID)
+            if talentInfo then
+                AddSpellID(knownSpellIDs, seen, talentInfo.spellID)
+                AddSpellID(knownSpellIDs, seen, talentInfo.overridesSpellID)
             end
         end
     end

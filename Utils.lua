@@ -63,6 +63,24 @@ local function ToNumber(value)
     return numericValue
 end
 
+local function GetRawTableField(container, key)
+    if type(container) ~= "table" or type(key) ~= "string" then
+        return nil
+    end
+    return rawget(container, key)
+end
+
+local function GetRawTableNumberField(container, ...)
+    for index = 1, select("#", ...) do
+        local key = select(index, ...)
+        local numericValue = ToNumber(GetRawTableField(container, key))
+        if numericValue then
+            return numericValue
+        end
+    end
+    return nil
+end
+
 local function SafeCallNumber(func, ...)
     if type(func) ~= "function" then
         return nil
@@ -105,6 +123,66 @@ function U.GetLiveCurrentSpecID()
         return ToNumber(GetLiveSpecializationInfo(specIndex)) or 0
     end
     return 0
+end
+
+---@class PvPTipLiveSpellBookSkillLineInfo
+---@field itemIndexOffset number
+---@field numSpellBookItems number
+---@field skillLineID number|nil
+
+---@return PvPTipLiveSpellBookSkillLineInfo?
+function U.NormalizeSpellBookSkillLineInfo(lineInfo)
+    if type(lineInfo) ~= "table" then
+        return nil
+    end
+
+    return {
+        itemIndexOffset = tonumber(GetRawTableField(lineInfo, "itemIndexOffset")) or 0,
+        numSpellBookItems = tonumber(GetRawTableField(lineInfo, "numSpellBookItems")) or 0,
+        skillLineID = GetRawTableNumberField(lineInfo, "skillLineID", "skillLine", "id"),
+    }
+end
+
+---@return PvPTipLiveSpellBookSkillLineInfo?
+function U.GetLiveSpellBookSkillLineInfo(lineIndex)
+    local numericLineIndex = tonumber(lineIndex)
+    if not numericLineIndex or numericLineIndex <= 0 then
+        return nil
+    end
+    if not (C_SpellBook and C_SpellBook.GetSpellBookSkillLineInfo) then
+        return nil
+    end
+
+    return U.NormalizeSpellBookSkillLineInfo(C_SpellBook.GetSpellBookSkillLineInfo(numericLineIndex))
+end
+
+---@class PvPTipLivePvpTalentInfo
+---@field spellID number|nil
+---@field overridesSpellID number|nil
+
+---@return PvPTipLivePvpTalentInfo?
+function U.NormalizePvpTalentInfo(talentInfo)
+    if type(talentInfo) ~= "table" then
+        return nil
+    end
+
+    return {
+        spellID = GetRawTableNumberField(talentInfo, "spellID", "actionBarSpellID", "selectedSpellID"),
+        overridesSpellID = GetRawTableNumberField(talentInfo, "overridesSpellID", "overrideSpellID", "overriddenSpellID"),
+    }
+end
+
+---@return PvPTipLivePvpTalentInfo?
+function U.GetLivePvpTalentInfo(talentID)
+    local numericTalentID = ToNumber(talentID)
+    if not numericTalentID then
+        return nil
+    end
+    if not (C_SpecializationInfo and C_SpecializationInfo.GetPvpTalentInfo) then
+        return nil
+    end
+
+    return U.NormalizePvpTalentInfo(C_SpecializationInfo.GetPvpTalentInfo(numericTalentID))
 end
 
 local function AddUniqueNumber(list, seen, value)
@@ -1272,7 +1350,7 @@ function U.FormatPvpDurationForSpell(spellID, mode)
     return "Duration " .. pvpText
 end
 
-function U.FormatEffectCompact(effect)
+function U.FormatEffectCompact(effect, _options)
     if type(effect) ~= "table" then
         return "Effect", 1
     end
