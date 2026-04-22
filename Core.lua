@@ -1,5 +1,6 @@
 -- core.lua 
 PvPTip = PvPTip or {}
+PvPTip.version = "3.0.0"
 local U = PvPTip.Utils
 
 -------------------------------------------------------------------------------
@@ -9,9 +10,10 @@ local U = PvPTip.Utils
 local DEFAULTS = {
     enabled = true,
     showInTooltips = true,
-    showInTalents = true, -- to do
-    showOnItems = false, -- to do
+    showInTalents = true,
+    showOnItems = false,
     tooltipMode = "compact", -- "compact", "verbose", "minimal"
+    overviewScope = "class", -- "class", "spec"
     showMinimapIcon = true,
     minimapPos = 220,
     colors = {
@@ -80,18 +82,22 @@ end
 -------------------------------------------------------------------------------
 
 local function UpdateSpecInfo()
-    local specIndex = GetSpecialization and GetSpecialization() or 0
-    if specIndex and specIndex > 0 then
-        local specID = GetSpecializationInfo and GetSpecializationInfo(specIndex)
-        if specID then
-            PvPTip.currentSpecID = specID
-        end
-    end
+    local specID = U and U.GetLiveCurrentSpecID and U.GetLiveCurrentSpecID() or 0
+    PvPTip.currentSpecID = specID or 0
 
     -- get class ID
     local _, _, classID = UnitClass("player")
     if classID then
         PvPTip.currentClassID = classID
+    end
+end
+
+local function InvalidateRuntimeCaches()
+    if U and U.InvalidateCaches then
+        U.InvalidateCaches()
+    end
+    if PvPTip.TooltipResolver and PvPTip.TooltipResolver.InvalidateCaches then
+        PvPTip.TooltipResolver.InvalidateCaches()
     end
 end
 
@@ -104,16 +110,19 @@ local function PrintWelcome()
     if not cfg.enabled then return end
 
     local build = PvPTipData and PvPTipData.Build or "unknown"
+    local addonVersion = PvPTip.version or "3.0.0"
     local count = 0
-    if PvPTipData and PvPTipData.Spells then
-        for _ in pairs(PvPTipData.Spells) do count = count + 1 end
+    if PvPTipData and PvPTipData.PvpSpellEffects then
+        for _ in pairs(PvPTipData.PvpSpellEffects) do
+            count = count + 1
+        end
     end
 
     local r, g, b = cfg.colors.header[1], cfg.colors.header[2], cfg.colors.header[3]
     DEFAULT_CHAT_FRAME:AddMessage(
-        string.format("|cff%02x%02x%02xPvPTip v2.0.0|r loaded — %d spells, build %s. Type /pvptip for options.",
+        string.format("|cff%02x%02x%02xPvPTip v%s|r loaded — %d spells, build %s. Type /pvptip for options.",
             math.floor(r * 255), math.floor(g * 255), math.floor(b * 255),
-            count, build),
+            addonVersion, count, build),
         1, 1, 1
     )
 
@@ -131,6 +140,71 @@ end
 -- slash commands
 -------------------------------------------------------------------------------
 
+local function EnsureDebugDB()
+    if type(PvPTipDebugDB) ~= "table" then
+        PvPTipDebugDB = {}
+    end
+    if type(PvPTipDebugDB.exports) ~= "table" then
+        PvPTipDebugDB.exports = {}
+    end
+    return PvPTipDebugDB
+end
+
+local function BuildTimestamp()
+    if date then
+        return date("!%Y-%m-%dT%H:%M:%SZ")
+    end
+    if time then
+        return tostring(time())
+    end
+    return "unknown"
+end
+
+local function SaveDebugExport(kind, payload)
+    local db = EnsureDebugDB()
+    local entry = {
+        kind = kind,
+        timestamp = BuildTimestamp(),
+        payload = payload,
+    }
+
+    table.insert(db.exports, 1, entry)
+    local maxExports = 20
+    while #db.exports > maxExports do
+        table.remove(db.exports)
+    end
+    db.lastExport = entry
+    return entry
+end
+
+local function HandleExportCommand(args)
+    local resolver = PvPTip.TooltipResolver
+    if not resolver or not resolver.BuildDebugSnapshot then
+        print("|cFFFFD100PvPTip:|r Export unavailable (resolver not loaded).")
+        return true
+    end
+
+    local trimmed = (args or ""):trim()
+    if trimmed == "" or trimmed == "spellbook" then
+        SaveDebugExport("spellbook", resolver.BuildDebugSnapshot({mode = "spellbook"}))
+        print("|cFFFFD100PvPTip:|r Exported spellbook diagnostics to PvPTipDebugDB.lastExport.")
+        return true
+    end
+
+    local spellID = tonumber(trimmed:match("^spell%s+(%d+)$"))
+    if spellID and spellID > 0 then
+        SaveDebugExport("spell", resolver.BuildDebugSnapshot({
+            mode = "spell",
+            spellID = spellID,
+        }))
+        print(string.format("|cFFFFD100PvPTip:|r Exported spell %d diagnostics to PvPTipDebugDB.lastExport.", spellID))
+        return true
+    end
+
+    print("|cFFFFD100PvPTip:|r Export usage: /pvptip export spellbook  or  /pvptip export spell <id>")
+    return true
+end
+
 local function HandleSlashCommand(msg)
     msg = (msg or ""):lower():trim()
 
@@ -141,6 +215,8 @@ local function HandleSlashCommand(msg)
         print("  /pvptip tooltip — Toggle tooltip display")
         print("  /pvptip mode [compact|verbose|minimal] — Set tooltip mode")
         print("  /pvptip status — Show current status")
+        print("  /pvptip export spellbook — Export resolver diagnostics to SavedVariables")
+        print("  /pvptip export spell <id> — Export one spell diagnostic snapshot")
     elseif msg == "tooltip" then
         local cfg = PvPTip.GetConfig()
         cfg.showInTooltips = not cfg.showInTooltips
@@ -159,8 +235,12 @@ local function HandleSlashCommand(msg)
         print("|cFFFFD100PvPTip Status:|r")
         print("  Build: " .. build)
         print("  Mode: " .. cfg.tooltipMode)
+        print("  Overview scope: " .. (cfg.overviewScope or "class"))
         print("  Tooltips: " .. (cfg.showInTooltips and "on" or "off"))
         print("  PvP Active: " .. (PvPTip.isPvPActive and "yes" or "no"))
+    elseif msg:sub(1, 6) == "export" then
+        local args = msg:sub(8)
+        HandleExportCommand(args)
     else
         -- Toggle GUI
         if PvPTip.ToggleGUI then
@@ -181,6 +261,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "ADDON_LOADED" and arg1 == "PvPTip" then
         -- initialize saved variables
         PvPTipDB = MergeDefaults(PvPTipDB, DEFAULTS)
+        EnsureDebugDB()
 
         -- register slash commands
         SLASH_PVPTIP1 = "/pvptip"
@@ -192,6 +273,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
     elseif event == "PLAYER_LOGIN" then
         UpdateSpecInfo()
         UpdatePvPState()
+        InvalidateRuntimeCaches()
 
         -- detect client build for mismatch warning
         if GetBuildInfo then
@@ -216,15 +298,21 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, ...)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         UpdatePvPState()
+        InvalidateRuntimeCaches()
 
     elseif event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
         UpdateSpecInfo()
+        InvalidateRuntimeCaches()
         -- refresh GUI if open
         if PvPTip.RefreshGUI then PvPTip.RefreshGUI() end
 
     elseif event == "TRAIT_CONFIG_UPDATED" then
+        InvalidateRuntimeCaches()
         -- talent loadout changed
         if PvPTip.RefreshGUI then PvPTip.RefreshGUI() end
+
+    elseif event == "TRAIT_NODE_CHANGED" or event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_SKILL_LINE" then
+        InvalidateRuntimeCaches()
 
     elseif event == "UNIT_AURA" then
         if arg1 == "player" then
@@ -238,4 +326,7 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+eventFrame:RegisterEvent("TRAIT_NODE_CHANGED")
+eventFrame:RegisterEvent("SPELLS_CHANGED")
+eventFrame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
 eventFrame:RegisterEvent("UNIT_AURA")

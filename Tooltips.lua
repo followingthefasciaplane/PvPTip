@@ -1,18 +1,16 @@
--- tooltips.lua 
 PvPTip = PvPTip or {}
 local U = PvPTip.Utils
+local R = PvPTip.TooltipResolver
 
--------------------------------------------------------------------------------
--- tooltip deduplication
--------------------------------------------------------------------------------
+local HAS_TOOLTIP_POSTCALLS = TooltipDataProcessor and Enum and Enum.TooltipDataType
 
 local function HasPvPTipLines(tooltip)
     local ok, result = pcall(function()
-        for i = 1, tooltip:NumLines() do
-            local left = _G[tooltip:GetName() .. "TextLeft" .. i]
+        for index = 1, tooltip:NumLines() do
+            local left = _G[tooltip:GetName() .. "TextLeft" .. index]
             if left then
                 local text = left:GetText()
-                if text and (text:find("PvP:") or text:find("PvP Coefficients")) then
+                if text and (text:find("PvP:", 1, true) or text:find("PvP Coefficients:", 1, true)) then
                     return true
                 end
             end
@@ -23,328 +21,337 @@ local function HasPvPTipLines(tooltip)
 end
 
 local function GetTooltipSpellID(tooltip)
-    if not tooltip or not tooltip.GetSpell then return end
+    if not tooltip or not tooltip.GetSpell then
+        return nil
+    end
 
     local _, spellID = tooltip:GetSpell()
-    local sid = tonumber(spellID)
-    if sid and sid > 0 then
-        return sid
+    local numericSpellID = tonumber(spellID)
+    if numericSpellID and numericSpellID > 0 then
+        return numericSpellID
+    end
+    return nil
+end
+
+local function BuildGroupDisplay(group, cfg)
+    local rows, strongestCoefficient = U.GetGroupPvpRows(group, cfg.tooltipMode)
+    if #rows == 0 then
+        return nil
+    end
+
+    return {
+        group = group,
+        rows = rows,
+        strongestCoefficient = strongestCoefficient,
+    }
+end
+
+local function CanRenderSingleLine(display)
+    if not display then
+        return false
+    end
+    if #display.rows ~= 1 then
+        return false
+    end
+    return #(display.rows[1].text or "") <= 56
+end
+
+local function AddSingleLine(tooltip, display, cfg)
+    local row = display.rows[1]
+    local text = string.format("1# %s", row.text or "Effect")
+    local coefficient = tonumber(row.coefficient) or 1
+
+    local r, g, b = U.GetCoeffColor(coefficient, cfg)
+    tooltip:AddDoubleLine("PvP:", text,
+        cfg.colors.header[1], cfg.colors.header[2], cfg.colors.header[3],
+        r, g, b)
+end
+
+local function AddIndentedLine(tooltip, indent, text, r, g, b)
+    tooltip:AddLine(string.rep("  ", indent) .. text, r, g, b)
+end
+
+local function AddGroupBlock(tooltip, display, cfg, multipleGroups)
+    local group = display.group
+    local baseIndent = multipleGroups and 1 or 0
+
+    if multipleGroups then
+        AddIndentedLine(
+            tooltip,
+            1,
+            group.name,
+            cfg.colors.header[1], cfg.colors.header[2], cfg.colors.header[3]
+        )
+    end
+
+    for rowIndex, row in ipairs(display.rows) do
+        local text = string.format("%d# %s", rowIndex, row.text or "Effect")
+        local coefficient = tonumber(row.coefficient) or 1
+        local r, g, b = U.GetCoeffColor(coefficient, cfg)
+        AddIndentedLine(tooltip, baseIndent + 1, text, r, g, b)
     end
 end
 
--------------------------------------------------------------------------------
--- add PvP coefficient lines to a tooltip
--------------------------------------------------------------------------------
+local function IsSpellDataCached(spellID)
+    if not (C_Spell and C_Spell.IsSpellDataCached) then
+        return true
+    end
 
-local function AddPvPLines(tooltip, spellID)
-    local sid = tonumber(spellID)
-    if not sid or sid == 0 then return end
-    spellID = sid
+    local ok, cached = pcall(C_Spell.IsSpellDataCached, spellID)
+    if not ok then
+        return true
+    end
+    return cached and true or false
+end
 
-    if not PvPTipData then return end
+local function RequestSpellDataForCandidates(resolved)
+    if not (C_Spell and C_Spell.RequestLoadSpellData) then
+        return false
+    end
 
+    local requested = false
+    local candidates = resolved and (resolved.candidateSpellIDs or resolved.spellIDs) or {}
+    for _, spellID in ipairs(candidates or {}) do
+        local numericSpellID = tonumber(spellID)
+        if numericSpellID and numericSpellID > 0 and not IsSpellDataCached(numericSpellID) then
+            C_Spell.RequestLoadSpellData(numericSpellID)
+            requested = true
+        end
+    end
+
+    return requested
+end
+
+local RenderTooltip
+
+local function QueueRetry(tooltip, data)
+    if not (C_Timer and C_Timer.After) then
+        return false
+    end
+    if tooltip.__PvPTipDeferredRetryPending then
+        return false
+    end
+
+    tooltip.__PvPTipDeferredRetryPending = true
+    C_Timer.After(0, function()
+        if tooltip then
+            tooltip.__PvPTipDeferredRetryPending = nil
+        end
+        if tooltip and tooltip.IsShown and tooltip:IsShown() then
+            RenderTooltip(tooltip, data, true, true)
+        end
+    end)
+    return true
+end
+
+RenderTooltip = function(tooltip, data, forceRender, hasRetried)
     local cfg = PvPTip.GetConfig()
-    if not cfg.enabled or not cfg.showInTooltips then return end
-
-    -- avoid duplicate lines
-    if HasPvPTipLines(tooltip) then return end
-
-    local resolvedID, isParent = U.ResolveSpellID(spellID)
-    if not resolvedID then return end
-
-    local hr, hg, hb = cfg.colors.header[1], cfg.colors.header[2], cfg.colors.header[3]
-
-    -- collect spellIDs to check for affected-by (may be multiple children)
-    local affectedByIDs = {}
-
-    if isParent then
-        -- parent spell: show children's coefficients
-        local children = PvPTipData.SpellParents[resolvedID]
-        if not children then return end
-
-        local allParts = {}
-        local anyData = false
-
-        for _, childID in ipairs(children) do
-            local childData = PvPTipData.Spells[childID]
-            if childData then
-                for _, eff in ipairs(childData.e) do
-                    if math.abs(eff.p - 1.0) > 0.001 then
-                        anyData = true
-                        local text, mult = FormatEffect(eff, childID, cfg)
-                        local r, g, b = U.GetCoeffColor(mult, cfg)
-                        table.insert(allParts, {text = text, r = r, g = g, b = b, mult = mult})
-                    end
-                end
-                affectedByIDs[childID] = true
-            end
-        end
-
-        if not anyData then return end
-
-        -- deduplicate identical entries
-        local seen = {}
-        local unique = {}
-        for _, part in ipairs(allParts) do
-            if not seen[part.text] then
-                seen[part.text] = true
-                table.insert(unique, part)
-            end
-        end
-
-        AddFormattedLines(tooltip, unique, cfg, hr, hg, hb, affectedByIDs)
-    else
-        -- direct spell
-        local spellData = PvPTipData.Spells[resolvedID]
-        if not spellData then return end
-
-        local parts = {}
-        for _, eff in ipairs(spellData.e) do
-            if math.abs(eff.p - 1.0) > 0.001 then
-                local text, mult = FormatEffect(eff, resolvedID, cfg)
-                local r, g, b = U.GetCoeffColor(mult, cfg)
-                table.insert(parts, {text = text, r = r, g = g, b = b, mult = mult})
-            end
-        end
-
-        if #parts == 0 then return end
-
-        affectedByIDs[resolvedID] = true
-        AddFormattedLines(tooltip, parts, cfg, hr, hg, hb, affectedByIDs)
+    if not cfg.enabled then
+        return
     end
-end
-
--------------------------------------------------------------------------------
--- format a single effect based on tooltip mode
--------------------------------------------------------------------------------
-
-function FormatEffect(eff, spellID, cfg)
-    local mode = cfg.tooltipMode
-    if mode == "verbose" then
-        return U.FormatEffectVerbose(eff, spellID)
-    elseif mode == "minimal" then
-        return U.FormatEffectMinimal(eff, spellID)
-    else
-        return U.FormatEffectCompact(eff, spellID)
+    if not forceRender and HasPvPTipLines(tooltip) then
+        return
     end
-end
 
--------------------------------------------------------------------------------
--- add formatted lines to tooltip
--------------------------------------------------------------------------------
-
-function AddFormattedLines(tooltip, parts, cfg, hr, hg, hb, affectedByIDs)
-    local mode = cfg.tooltipMode
-
-    if mode == "verbose" then
-        -- multi-line: header, then one line per effect
-        tooltip:AddLine("PvP Coefficients:", hr, hg, hb)
-        for _, part in ipairs(parts) do
-            tooltip:AddLine("  " .. part.text, part.r, part.g, part.b)
-        end
-    elseif mode == "compact" then
-        if #parts == 1 then
-            tooltip:AddDoubleLine("PvP:", parts[1].text, hr, hg, hb, parts[1].r, parts[1].g, parts[1].b)
-        else
-            -- check combined text length to decide layout
-            local combined = {}
-            local totalLen = 0
-            for _, part in ipairs(parts) do
-                table.insert(combined, part.text)
-                totalLen = totalLen + #part.text
-            end
-            -- add separators length
-            totalLen = totalLen + (#parts - 1) * 3
-
-            if #parts <= 3 and totalLen <= 55 then
-                -- short enough for one line
-                local mainPart = parts[1]
-                for _, part in ipairs(parts) do
-                    if math.abs(part.mult - 1.0) > math.abs(mainPart.mult - 1.0) then
-                        mainPart = part
-                    end
-                end
-                tooltip:AddDoubleLine("PvP:", table.concat(combined, " | "),
-                    hr, hg, hb, mainPart.r, mainPart.g, mainPart.b)
+    local resolved = R.ResolveTooltip(tooltip, data)
+    if not resolved.primarySpellID then
+        local tooltipSpellID = GetTooltipSpellID(tooltip)
+        if tooltipSpellID then
+            local context = tooltip and tooltip.__PvPTipContext or nil
+            if context and context.spellBookItemSlotIndex then
+                R.CaptureSpellBookItem(
+                    tooltip,
+                    context.spellBookItemSlotIndex,
+                    context.spellBookItemSpellBank,
+                    tooltipSpellID
+                )
+            elseif context and (context.contextType == "talent" or context.definitionID or context.talentID) then
+                R.CaptureTalent(tooltip, {
+                    talentID = context.talentID,
+                    definitionID = context.definitionID,
+                    nodeID = context.nodeID,
+                    entryID = context.entryID,
+                    rank = context.rank,
+                    spellID = tooltipSpellID,
+                    configID = context.configID,
+                })
             else
-                -- too long or too many: header + individual lines
-                tooltip:AddLine("PvP:", hr, hg, hb)
-                for _, part in ipairs(parts) do
-                    tooltip:AddLine("  " .. part.text, part.r, part.g, part.b)
-                end
+                R.CaptureSpell(tooltip, tooltipSpellID)
             end
-        end
-    else -- minimal
-        if #parts == 1 then
-            tooltip:AddDoubleLine("PvP:", parts[1].text, hr, hg, hb, parts[1].r, parts[1].g, parts[1].b)
-        else
-            local combined = {}
-            local totalLen = 0
-            for _, part in ipairs(parts) do
-                table.insert(combined, part.text)
-                totalLen = totalLen + #part.text
-            end
-            totalLen = totalLen + (#parts - 1) * 3
-
-            local mainPart = parts[1]
-            for _, part in ipairs(parts) do
-                if math.abs(part.mult - 1.0) > math.abs(mainPart.mult - 1.0) then
-                    mainPart = part
-                end
-            end
-
-            if totalLen <= 55 then
-                tooltip:AddDoubleLine("PvP:", table.concat(combined, " | "),
-                    hr, hg, hb, mainPart.r, mainPart.g, mainPart.b)
-            else
-                tooltip:AddLine("PvP:", hr, hg, hb)
-                for _, part in ipairs(parts) do
-                    tooltip:AddLine("  " .. part.text, part.r, part.g, part.b)
-                end
-            end
+            resolved = R.ResolveTooltip(tooltip, data)
         end
     end
 
-    -- affected-by: show modifier auras (compact & verbose only, skip minimal)
-    if mode ~= "minimal" and affectedByIDs then
-        local seenMods = {}
-        local modLines = {}
-        for spellID in pairs(affectedByIDs) do
-            local affectedBy = U.GetAffectedBy(spellID)
-            if affectedBy then
-                for _, mod in ipairs(affectedBy) do
-                    local key = mod.auraID .. mod.type
-                    if not seenMods[key] then
-                        seenMods[key] = true
-                        local sign = mod.value >= 0 and "+" or ""
-                        local typeTag = mod.type == "label" and "label" or "mask"
-                        table.insert(modLines, string.format("  %s %s%s%% (%s)",
-                            mod.name, sign, mod.value, typeTag))
-                    end
-                end
-            end
+    if not resolved or not resolved.spellIDs or #resolved.spellIDs == 0 then
+        return
+    end
+
+    if resolved.contextType == "talent" then
+        if not cfg.showInTalents then
+            return
         end
-        if #modLines > 0 then
-            local nr, ng, nb = cfg.colors.neutral[1], cfg.colors.neutral[2], cfg.colors.neutral[3]
-            tooltip:AddLine("Affected by:", nr * 0.8, ng * 0.8, nb * 0.8)
-            for _, line in ipairs(modLines) do
-                tooltip:AddLine(line, nr * 0.7, ng * 0.7, nb * 0.7)
-            end
+    elseif not cfg.showInTooltips then
+        return
+    end
+
+    local displays = {}
+    for _, group in ipairs(U.BuildSpellGroups(resolved.spellIDs, {
+        groupByBaseSpell = false,
+        resolveHierarchy = false,
+    })) do
+        local display = BuildGroupDisplay(group, cfg)
+        if display then
+            table.insert(displays, display)
+        end
+    end
+
+    if #displays == 0 then
+        if not hasRetried and RequestSpellDataForCandidates(resolved) then
+            QueueRetry(tooltip, data)
+        end
+        return
+    end
+
+    if #displays == 1 and CanRenderSingleLine(displays[1]) then
+        AddSingleLine(tooltip, displays[1], cfg)
+    else
+        tooltip:AddLine("PvP Coefficients:", cfg.colors.header[1], cfg.colors.header[2], cfg.colors.header[3])
+        local multipleGroups = #displays > 1
+        for _, display in ipairs(displays) do
+            AddGroupBlock(tooltip, display, cfg, multipleGroups)
         end
     end
 
     tooltip:Show()
 end
 
--------------------------------------------------------------------------------
--- hook helpers
--------------------------------------------------------------------------------
-
-local function hook(tbl, fn, cb)
-    if tbl and tbl[fn] then
-        hooksecurefunc(tbl, fn, cb)
+local function Hook(target, methodName, callback)
+    if target and target[methodName] then
+        hooksecurefunc(target, methodName, callback)
     end
 end
 
-local function hookScript(frame, event, cb)
-    if frame and frame.HasScript and frame:HasScript(event) then
-        frame:HookScript(event, cb)
+local function AddPostCall(dataType)
+    if HAS_TOOLTIP_POSTCALLS and dataType ~= nil then
+        TooltipDataProcessor.AddTooltipPostCall(dataType, function(tooltip, data)
+            RenderTooltip(tooltip, data)
+        end)
     end
 end
 
--------------------------------------------------------------------------------
--- spell tooltip hooks
--------------------------------------------------------------------------------
+AddPostCall(Enum and Enum.TooltipDataType and Enum.TooltipDataType.Spell)
+AddPostCall(Enum and Enum.TooltipDataType and Enum.TooltipDataType.UnitAura)
 
--- TooltipDataProcessor
-if TooltipDataProcessor then
-    TooltipDataProcessor.AddTooltipPostCall(
-        Enum.TooltipDataType.Spell,
-        function(tooltip, data)
-            if tooltip ~= GameTooltip then return end
-            local sid = GetTooltipSpellID(tooltip)
-            if not sid then return end
-            AddPvPLines(tooltip, sid)
-        end
-    )
-end
-
--- SetSpellByID fallback
-hook(GameTooltip, "SetSpellByID", function(tooltip, spellID)
-    AddPvPLines(tooltip, spellID)
+Hook(GameTooltip, "SetSpellByID", function(tooltip, spellID)
+    R.CaptureSpell(tooltip, spellID)
+    if not HAS_TOOLTIP_POSTCALLS then
+        RenderTooltip(tooltip)
+    end
 end)
 
--- action bar buttons
-hook(GameTooltip, "SetAction", function(tooltip, slot)
+Hook(GameTooltip, "SetSpellBookItem", function(tooltip, slotIndex, spellBank)
+    R.CaptureSpellBookItem(tooltip, slotIndex, spellBank, GetTooltipSpellID(tooltip))
+    if not HAS_TOOLTIP_POSTCALLS then
+        RenderTooltip(tooltip)
+    end
+end)
+
+Hook(GameTooltip, "SetHyperlink", function(tooltip, hyperlink)
+    R.CaptureHyperlink(tooltip, hyperlink)
+    if not HAS_TOOLTIP_POSTCALLS then
+        RenderTooltip(tooltip)
+    end
+end)
+
+Hook(ItemRefTooltip, "SetHyperlink", function(tooltip, hyperlink)
+    R.CaptureHyperlink(tooltip, hyperlink)
+    if not HAS_TOOLTIP_POSTCALLS then
+        RenderTooltip(tooltip)
+    end
+end)
+
+Hook(GameTooltip, "SetAction", function(tooltip, slot)
     local actionType, id = GetActionInfo(slot)
     if actionType == "spell" then
-        AddPvPLines(tooltip, id)
-    elseif actionType == "macro" then
-        -- try to get spell from macro
-        local spellID = GetMacroSpell and GetMacroSpell(id)
+        R.CaptureSpell(tooltip, id)
+    elseif actionType == "macro" and GetMacroSpell then
+        local spellID = GetMacroSpell(id)
         if spellID then
-            AddPvPLines(tooltip, spellID)
+            R.CaptureSpell(tooltip, spellID)
+        end
+    end
+
+    if not HAS_TOOLTIP_POSTCALLS then
+        RenderTooltip(tooltip)
+    end
+end)
+
+Hook(GameTooltip, "SetPetAction", function(tooltip, slot)
+    local _, _, _, _, _, spellID = GetPetActionInfo(slot)
+    if spellID and spellID > 0 then
+        R.CaptureSpell(tooltip, spellID)
+        if not HAS_TOOLTIP_POSTCALLS then
+            RenderTooltip(tooltip)
         end
     end
 end)
 
--- pet action bar (to do)
-hook(GameTooltip, "SetPetAction", function(tooltip, slot)
-    -- pet spells: try to extract spellID
-    if C_ActionBar and C_ActionBar.GetPetActionPetBarIndices then
-        local name, texture, isToken, isActive, autoCast, spellID = GetPetActionInfo(slot)
-        if spellID and spellID > 0 then
-            AddPvPLines(tooltip, spellID)
-        end
+Hook(GameTooltip, "SetPvpTalent", function(tooltip, talentID)
+    R.CaptureTalent(tooltip, {
+        talentID = tonumber(talentID),
+        spellID = GetTooltipSpellID(tooltip),
+        configID = C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID() or nil,
+    })
+    if not HAS_TOOLTIP_POSTCALLS then
+        RenderTooltip(tooltip)
     end
 end)
 
--- hyperlinks in chat
-hook(GameTooltip, "SetHyperlink", function(tooltip, link)
-    if not link then return end
-    local spellID = link:match("spell:(%d+)")
-    if spellID then
-        AddPvPLines(tooltip, tonumber(spellID))
+Hook(GameTooltip, "SetTalent", function(tooltip)
+    R.CaptureTalent(tooltip, {
+        spellID = GetTooltipSpellID(tooltip),
+        configID = C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID() or nil,
+    })
+    if not HAS_TOOLTIP_POSTCALLS then
+        RenderTooltip(tooltip)
     end
 end)
-
--------------------------------------------------------------------------------
--- talent tree tooltip hooks
--------------------------------------------------------------------------------
 
 if TalentDisplayMixin then
-    hook(TalentDisplayMixin, "SetTooltipInternal", function(btn)
-        if not btn then return end
-        -- get the spell ID from the talent definition
-        local defID = btn.definitionID
-        if defID and C_Traits and C_Traits.GetDefinitionInfo then
-            local defInfo = C_Traits.GetDefinitionInfo(defID)
-            if defInfo and defInfo.spellID then
-                AddPvPLines(GameTooltip, defInfo.spellID)
-            end
-            -- also check overriddenSpellID
-            if defInfo and defInfo.overriddenSpellID and defInfo.overriddenSpellID > 0 then
-                AddPvPLines(GameTooltip, defInfo.overriddenSpellID)
+    Hook(TalentDisplayMixin, "SetTooltipInternal", function(button)
+        if not button then
+            return
+        end
+
+        local entryID = button.entryID
+        if not entryID and type(button.activeEntry) == "table" then
+            entryID = button.activeEntry.entryID
+        elseif not entryID and type(button.activeEntry) == "number" then
+            entryID = button.activeEntry
+        end
+
+        local spellID
+        local tooltipSpellID = GetTooltipSpellID(GameTooltip)
+        if tooltipSpellID then
+            spellID = tooltipSpellID
+        elseif button.definitionID then
+            for _, resolvedSpellID in ipairs(U.GetTraitDefinitionSpellIDs(button.definitionID)) do
+                spellID = resolvedSpellID
+                break
             end
         end
+
+        R.CaptureTalent(GameTooltip, {
+            talentID = button.talentID,
+            definitionID = button.definitionID,
+            nodeID = button.nodeID,
+            entryID = entryID,
+            rank = button.rank,
+            spellID = spellID,
+            configID = button.configID or (C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID() or nil),
+        })
+        RenderTooltip(GameTooltip)
     end)
 end
 
--------------------------------------------------------------------------------
--- unit aura tooltip hooks (buffs/debuffs on unit frames)
--------------------------------------------------------------------------------
-
-if TooltipDataProcessor then
-    TooltipDataProcessor.AddTooltipPostCall(
-        Enum.TooltipDataType.UnitAura,
-        function(tooltip, data)
-            if tooltip ~= GameTooltip then return end
-            local sid = GetTooltipSpellID(tooltip)
-            if not sid then return end
-            AddPvPLines(tooltip, sid)
-        end
-    )
-end
-
--- expose 
-PvPTip.AddPvPLines = AddPvPLines
+PvPTip.AddPvPLines = RenderTooltip

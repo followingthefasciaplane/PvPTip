@@ -11,15 +11,16 @@ local tabController
 
 local function CreateMainWindow()
     mainWindow = UI.CreateWindow("PvPTipMainFrame", "PvPTip", UI.Sizes.windowW, UI.Sizes.windowH)
+    local addonVersion = PvPTip.version or "3.0.0"
 
     -- build + version in title bar
     local build = PvPTipData and PvPTipData.Build or "unknown"
     local buildText = mainWindow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     buildText:SetPoint("RIGHT", mainWindow.titleText, "RIGHT", 100, 0)
     if PvPTip.buildMismatch then
-        buildText:SetText("|cFFFF6600v2.0.0 — build " .. build .. " (outdated)|r")
+        buildText:SetText("|cFFFF6600v" .. addonVersion .. " — build " .. build .. " (outdated)|r")
     else
-        buildText:SetText("v2.0.0 — build " .. build)
+        buildText:SetText("v" .. addonVersion .. " — build " .. build)
     end
     buildText:SetTextColor(0.5, 0.5, 0.5)
 
@@ -45,7 +46,7 @@ local function CreateMainWindow()
         },
         {
             Key = "Lookup",
-            Title = "Lookup",
+            Title = "Class Lookup",
             Build = function(panel)
                 if PvPTip.BuildLookupPanel then
                     PvPTip.BuildLookupPanel(panel)

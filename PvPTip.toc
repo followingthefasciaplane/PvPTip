@@ -1,14 +1,29 @@
-## Interface: 120001
+## Interface: 120005
 ## Title: PvPTip
 ## Notes: Find hidden spell PvP modifiers for spells and more
 ## Author: feedbacker
-## Version: 2.0.1
-## SavedVariables: PvPTipDB
+## Version: 3.0.0
+## SavedVariables: PvPTipDB, PvPTipDebugDB
 ## IconTexture: Interface\ICONS\Ability_pvp_gladiatormedallion
 
-Data.lua
+GeneratedData/Init.lua
+GeneratedData/Classes.lua
+GeneratedData/ClassFamilies.lua
+GeneratedData/SpecSpells.lua
+GeneratedData/SpecDisplaySpells.lua
+GeneratedData/SpellEffectFacts.lua
+GeneratedData/SpellMetaFacts.lua
+GeneratedData/SpellRelationsGraph.lua
+GeneratedData/SpellModFacts.lua
+GeneratedData/PvpSpellEffects.lua
+GeneratedData/SpellRelations.lua
+GeneratedData/SpellMeta.lua
+GeneratedData/SpellModLookup.lua
+GeneratedData/TraitDefinitions.lua
+GeneratedData/PvpTalents.lua
 Utils.lua
 Core.lua
+TooltipResolver.lua
 Tooltips.lua
 Minimap.lua
 GUIComponents.lua

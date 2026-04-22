@@ -1,142 +1,186 @@
--- guioverview.lua
 PvPTip = PvPTip or {}
 local UI = PvPTip.UI
 local U = PvPTip.Utils
 
--------------------------------------------------------------------------------
--- state
--------------------------------------------------------------------------------
-
 local scrollContainer
 local spellRows = {}
+local OVERVIEW_SCOPE_OPTIONS = {
+    {label = "Class", value = "class"},
+    {label = "Spec", value = "spec"},
+}
 
--------------------------------------------------------------------------------
--- player spell enumeration (spellbook + talents)
--------------------------------------------------------------------------------
-
-local function EnumeratePlayerKnownSpells()
-    local known = {}
-
-    -- Spellbook
-    if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
-        local numLines = C_SpellBook.GetNumSpellBookSkillLines()
-        for lineIdx = 1, numLines do
-            local lineInfo = C_SpellBook.GetSpellBookSkillLineInfo(lineIdx)
-            if lineInfo then
-                local start = lineInfo.itemIndexOffset + 1
-                for slot = start, start + lineInfo.numSpellBookItems - 1 do
-                    local itemInfo = C_SpellBook.GetSpellBookItemInfo(slot, Enum.SpellBookSpellBank.Player)
-                    if itemInfo then
-                        local sid = itemInfo.spellID or itemInfo.actionID
-                        if sid and sid > 0 then known[sid] = true end
-                    end
-                end
-            end
-        end
+local function AddSpellID(list, seen, spellID)
+    local numericSpellID = tonumber(spellID)
+    if not numericSpellID or numericSpellID <= 0 or seen[numericSpellID] then
+        return
     end
-
-    -- talent tree spells
-    if C_ClassTalents and C_Traits then
-        local configID = C_ClassTalents.GetActiveConfigID()
-        local specID = PvPTip.currentSpecID
-        if configID and specID and specID > 0 then
-            local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
-            if treeID then
-                local nodeIDs = C_Traits.GetTreeNodes(treeID)
-                if nodeIDs then
-                    for _, nodeID in ipairs(nodeIDs) do
-                        local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
-                        if nodeInfo and nodeInfo.activeEntry and nodeInfo.activeEntry.entryID then
-                            local entryInfo = C_Traits.GetEntryInfo(configID, nodeInfo.activeEntry.entryID)
-                            if entryInfo and entryInfo.definitionID then
-                                local defInfo = C_Traits.GetDefinitionInfo(entryInfo.definitionID)
-                                if defInfo and defInfo.spellID then
-                                    known[defInfo.spellID] = true
-                                end
-                                if defInfo and defInfo.overriddenSpellID and defInfo.overriddenSpellID > 0 then
-                                    known[defInfo.overriddenSpellID] = true
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- PvP talents (is this actually needed? just incase they change these)
-    if C_SpecializationInfo and C_SpecializationInfo.GetAllSelectedPvpTalentIDs then
-        local pvpTalentIDs = C_SpecializationInfo.GetAllSelectedPvpTalentIDs()
-        if pvpTalentIDs then
-            for _, talentID in ipairs(pvpTalentIDs) do
-                if C_SpecializationInfo.GetPvpTalentInfo then
-                    local info = C_SpecializationInfo.GetPvpTalentInfo(talentID)
-                    if info and info.spellID then
-                        known[info.spellID] = true
-                    end
-                end
-            end
-        end
-    end
-
-    return known
+    seen[numericSpellID] = true
+    table.insert(list, numericSpellID)
 end
 
--------------------------------------------------------------------------------
--- build panel
--------------------------------------------------------------------------------
+local function EnumeratePlayerKnownSpells()
+    local knownSpellIDs = {}
+    local seen = {}
+    local specID = PvPTip.currentSpecID or 0
+
+    if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
+        local numLines = C_SpellBook.GetNumSpellBookSkillLines()
+        for lineIndex = 1, numLines do
+            local lineInfo = C_SpellBook.GetSpellBookSkillLineInfo(lineIndex)
+            if lineInfo then
+                local startIndex = lineInfo.itemIndexOffset + 1
+                for slot = startIndex, startIndex + lineInfo.numSpellBookItems - 1 do
+                    local itemInfo = C_SpellBook.GetSpellBookItemInfo(slot, Enum.SpellBookSpellBank.Player)
+                    if itemInfo then
+                        AddSpellID(knownSpellIDs, seen, itemInfo.spellID or itemInfo.actionID)
+                    end
+                end
+            end
+        end
+    end
+
+    for _, spellID in ipairs((U.GetDataTable("SpecSpells") or {})[specID] or {}) do
+        AddSpellID(knownSpellIDs, seen, spellID)
+    end
+    for _, spellID in ipairs(U.GetSpecDisplaySpellIDs(specID)) do
+        AddSpellID(knownSpellIDs, seen, spellID)
+    end
+
+    if C_ClassTalents and C_Traits then
+        local configID = C_ClassTalents.GetActiveConfigID()
+        local treeID = specID > 0 and C_ClassTalents.GetTraitTreeForSpec(specID) or nil
+        local nodeIDs = treeID and C_Traits.GetTreeNodes(treeID) or nil
+        if configID and nodeIDs then
+            for _, nodeID in ipairs(nodeIDs) do
+                local nodeInfo = C_Traits.GetNodeInfo(configID, nodeID)
+                local activeEntry = nodeInfo and nodeInfo.activeEntry
+                local entryID = type(activeEntry) == "table" and activeEntry.entryID or activeEntry
+                local entryInfo = entryID and C_Traits.GetEntryInfo and C_Traits.GetEntryInfo(configID, entryID) or nil
+                local definitionID = entryInfo and entryInfo.definitionID
+
+                if definitionID then
+                    for _, spellID in ipairs(U.GetTraitDefinitionSpellIDs(definitionID)) do
+                        AddSpellID(knownSpellIDs, seen, spellID)
+                    end
+                end
+            end
+        end
+    end
+
+    if C_SpecializationInfo and C_SpecializationInfo.GetAllSelectedPvpTalentIDs then
+        for _, talentID in ipairs(C_SpecializationInfo.GetAllSelectedPvpTalentIDs() or {}) do
+            local talentData = (U.GetDataTable("PvpTalents") or {})[talentID]
+            if talentData then
+                AddSpellID(knownSpellIDs, seen, talentData.actionBarSpellID)
+                AddSpellID(knownSpellIDs, seen, talentData.overridesSpellID)
+                for _, spellID in ipairs(talentData.resolvedSpellIDs or {}) do
+                    AddSpellID(knownSpellIDs, seen, spellID)
+                end
+            end
+
+            if C_SpecializationInfo.GetPvpTalentInfo then
+                local talentInfo = C_SpecializationInfo.GetPvpTalentInfo(talentID)
+                if talentInfo then
+                    AddSpellID(knownSpellIDs, seen, talentInfo.spellID)
+                end
+            end
+        end
+    end
+
+    table.sort(knownSpellIDs)
+    return knownSpellIDs
+end
+
+local function GetOverviewScope()
+    local scope = PvPTip.GetConfig().overviewScope
+    if scope == "spec" then
+        return "spec"
+    end
+    return "class"
+end
+
+local function GetOverviewScopeLabel(scope)
+    if scope == "spec" then
+        return "Spec"
+    end
+    return "Class"
+end
+
+local function GetOverviewInfoNote(scope, className)
+    if scope == "spec" then
+        return "This list is built from your live spellbook, selected talents, and selected PvP talents."
+    end
+    return string.format(
+        "This list pulls retained %s spell sources from class abilities, specs, talents, and PvP talents. Rows show only direct per-ability PvP coefficients.",
+        className or "class"
+    )
+end
+
+local function GetOverviewSourceSpellIDs(scope, classID)
+    if scope == "spec" then
+        return EnumeratePlayerKnownSpells()
+    end
+    return U.BuildClassSourceSpellIDs(classID)
+end
 
 function PvPTip.BuildOverviewPanel(panel)
     local padding = UI.Sizes.padding
 
-    -- header area (fixed, above scroll)
     local header = CreateFrame("Frame", nil, panel)
-    header:SetHeight(60)
+    header:SetHeight(82)
     header:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, -padding)
     header:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -padding, -padding)
 
-    -- spec name + class color
     local specText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     specText:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
     specText:SetText("Loading...")
     specText:SetTextColor(1, 1, 1)
     panel.specText = specText
 
-    -- PvP status indicator (to do)
     local pvpIndicator = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     pvpIndicator:SetPoint("LEFT", specText, "RIGHT", 12, 0)
     panel.pvpIndicator = pvpIndicator
 
-    -- build info
     local buildInfo = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     buildInfo:SetPoint("TOPRIGHT", header, "TOPRIGHT", 0, 0)
-    local build = PvPTipData and PvPTipData.Build or "unknown"
-    buildInfo:SetText("Build: " .. build)
     buildInfo:SetTextColor(0.5, 0.5, 0.5)
     panel.buildInfo = buildInfo
 
-    -- summary stats
+    local scopeDropdown = UI.CreateDropdown(
+        header,
+        "Scope:",
+        OVERVIEW_SCOPE_OPTIONS,
+        function()
+            return GetOverviewScope()
+        end,
+        function(value)
+            PvPTip.GetConfig().overviewScope = value
+            PvPTip.RefreshOverview()
+        end
+    )
+    scopeDropdown:SetPoint("TOPRIGHT", header, "TOPRIGHT", 0, -24)
+    scopeDropdown:SetWidth(260)
+    scopeDropdown.btn:SetWidth(120)
+    scopeDropdown.menu:SetWidth(120)
+    panel.scopeDropdown = scopeDropdown
+
     local summaryText = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     summaryText:SetPoint("TOPLEFT", specText, "BOTTOMLEFT", 0, -4)
     summaryText:SetTextColor(0.6, 0.6, 0.6)
     panel.summaryText = summaryText
 
-    -- divider below header
     local divider = UI.CreateDivider(panel, "Active Tooltips")
     divider:SetPoint("TOPLEFT", header, "BOTTOMLEFT", -padding, -4)
     divider:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", padding, -4)
 
-    -- info note
     local infoNote = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     infoNote:SetPoint("TOPLEFT", divider, "BOTTOMLEFT", padding + 4, -2)
     infoNote:SetPoint("RIGHT", panel, "RIGHT", -padding - 4, 0)
     infoNote:SetJustifyH("LEFT")
     infoNote:SetWordWrap(true)
-    infoNote:SetText("PvP coefficients are deeply hidden in spell data and some may be missing here. "
-        .. "Use the |cFFFFD100Lookup|r tab for a complete list of all PvP modifiers for your class.")
     infoNote:SetTextColor(0.45, 0.45, 0.45)
+    panel.infoNote = infoNote
 
-    -- scrollable content area
     scrollContainer = UI.CreateScrollFrame(panel)
     scrollContainer:SetPoint("TOPLEFT", infoNote, "BOTTOMLEFT", -4, -4)
     scrollContainer:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -padding, padding)
@@ -144,39 +188,31 @@ function PvPTip.BuildOverviewPanel(panel)
     panel.scrollContainer = scrollContainer
 end
 
--------------------------------------------------------------------------------
--- refresh content
--------------------------------------------------------------------------------
-
 function PvPTip.RefreshOverview()
-    if not scrollContainer then return end
+    if not scrollContainer then
+        return
+    end
+
     local panel = scrollContainer:GetParent()
     local cfg = PvPTip.GetConfig()
 
-    -- clear old rows
     for _, row in ipairs(spellRows) do
         row:Hide()
         row:SetParent(nil)
     end
     wipe(spellRows)
 
-    -- get current spec info
     local specID = PvPTip.currentSpecID or 0
     local classID = PvPTip.currentClassID or 0
-    local specName = "Unknown"
-    local className = "Unknown"
+    local specName = U.GetSpecName(specID, "Unknown")
+    local className = U.GetClassName(classID, "Unknown")
+    local scope = GetOverviewScope()
+    local scopeLabel = GetOverviewScopeLabel(scope)
 
-    if PvPTipData and PvPTipData.Classes then
-        local classData = PvPTipData.Classes[classID]
-        if classData then
-            className = classData.n
-            if classData.s[specID] then
-                specName = classData.s[specID]
-            end
-        end
+    if panel.scopeDropdown and panel.scopeDropdown.Update then
+        panel.scopeDropdown.Update()
     end
 
-    -- update header
     if panel.specText then
         panel.specText:SetText(specName .. " " .. className)
         local classColor = U.CLASS_COLORS[classID]
@@ -185,16 +221,14 @@ function PvPTip.RefreshOverview()
         end
     end
 
-    -- TO DO
     if panel.pvpIndicator then
         if PvPTip.isPvPActive then
-            panel.pvpIndicator:SetText("|cFF00FF00Detected Tooltips|r")
+            panel.pvpIndicator:SetText("|cFF00FF00PvP rules active|r")
         else
-            panel.pvpIndicator:SetText("|cFF666666Detected Tooltips|r")
+            panel.pvpIndicator:SetText("|cFF666666PvP rules inactive|r")
         end
     end
 
-    -- build mismatch warning
     if panel.buildInfo then
         local dataBuild = PvPTipData and PvPTipData.Build or "unknown"
         local clientBuild = PvPTip.clientBuild or "unknown"
@@ -205,155 +239,63 @@ function PvPTip.RefreshOverview()
         end
     end
 
-    -- enumerate players known spells via runtime API
-    local playerKnown = EnumeratePlayerKnownSpells()
+    if panel.infoNote then
+        panel.infoNote:SetText(GetOverviewInfoNote(scope, className))
+    end
 
-    local classFamily = U.GetClassFamily(classID)
-
-    -- gather spells: only those the player actually knows or has active
     local spellList = {}
-    if PvPTipData and PvPTipData.Spells then
-        for spellID, spellData in pairs(PvPTipData.Spells) do
-            -- must be player's class family (or c=0 if player knows it)
-            local relevant = false
-            if spellData.c == classFamily and classFamily > 0 then
-                -- class match: include if player knows it, or if it's in their spec spells
-                if playerKnown[spellID] then
-                    relevant = true
-                else
-                    -- check spec spells
-                    local specSpells = PvPTipData.SpecSpells and PvPTipData.SpecSpells[specID]
-                    if specSpells then
-                        for _, sid in ipairs(specSpells) do
-                            if sid == spellID then relevant = true; break end
-                        end
-                    end
-                    -- also check via override resolution
-                    if not relevant and C_Spell and C_Spell.GetOverrideSpell then
-                        for knownID in pairs(playerKnown) do
-                            local override = C_Spell.GetOverrideSpell(knownID)
-                            if override == spellID then relevant = true; break end
-                        end
-                    end
-                end
-            elseif spellData.c == 0 and playerKnown[spellID] then
-                relevant = true
-            end
-
-            if relevant then
-                -- build effect summary using raw base coefficients
-                local parts = {}
-                local maxDeviation = 0
-                local mainMult = 1
-
-                for _, eff in ipairs(spellData.e) do
-                    if math.abs(eff.p - 1.0) > 0.001 then
-                        table.insert(parts, eff.t .. " " .. U.FormatPct(eff.p))
-                        local dev = math.abs(eff.p - 1.0)
-                        if dev > maxDeviation then
-                            maxDeviation = dev
-                            mainMult = eff.p
-                        end
-                    end
-                end
-
-                if #parts > 0 then
-                    table.insert(spellList, {
-                        id = spellID,
-                        name = spellData.n,
-                        summary = table.concat(parts, " | "),
-                        mult = mainMult,
-                        sortName = spellData.n:lower(),
-                    })
-                end
-            end
-        end
-
-        -- also include parent spells the player knows
-        if PvPTipData.SpellParents then
-            local seen = {}
-            for _, s in ipairs(spellList) do seen[s.id] = true end
-
-            for parentID, children in pairs(PvPTipData.SpellParents) do
-                if not seen[parentID] and playerKnown[parentID] then
-                    local allParts = {}
-                    local mainMult = 1
-                    local maxDev = 0
-
-                    for _, childID in ipairs(children) do
-                        local childData = PvPTipData.Spells[childID]
-                        if childData then
-                            for _, eff in ipairs(childData.e) do
-                                if math.abs(eff.p - 1.0) > 0.001 then
-                                    local text = eff.t .. " " .. U.FormatPct(eff.p)
-                                    local dup = false
-                                    for _, ex in ipairs(allParts) do
-                                        if ex == text then dup = true; break end
-                                    end
-                                    if not dup then table.insert(allParts, text) end
-                                    local dev = math.abs(eff.p - 1.0)
-                                    if dev > maxDev then maxDev = dev; mainMult = eff.p end
-                                end
-                            end
-                        end
-                    end
-
-                    if #allParts > 0 then
-                        local pname = U.GetSpellName(parentID, "Spell #" .. parentID)
-                        table.insert(spellList, {
-                            id = parentID,
-                            name = pname,
-                            summary = table.concat(allParts, " | "),
-                            mult = mainMult,
-                            sortName = pname:lower(),
-                        })
-                    end
-                end
-            end
+    for _, group in ipairs(U.BuildSpellGroups(GetOverviewSourceSpellIDs(scope, classID), {
+        groupByBaseSpell = false,
+        resolveHierarchy = false,
+    })) do
+        local summary, strongestCoefficient = U.GetGroupSummary(group, cfg.tooltipMode)
+        if summary then
+            table.insert(spellList, {
+                id = group.baseSpellID,
+                group = group,
+                name = group.name,
+                summary = summary,
+                mult = strongestCoefficient or 1,
+                sortName = string.lower(group.name or ""),
+            })
         end
     end
 
-    -- sort alphabetically
-    table.sort(spellList, function(a, b) return a.sortName < b.sortName end)
+    table.sort(spellList, function(left, right)
+        return left.sortName < right.sortName
+    end)
 
-    -- update summary
     if panel.summaryText then
         local buffs = 0
         local nerfs = 0
-        for _, s in ipairs(spellList) do
-            if s.mult > 1.001 then buffs = buffs + 1
-            elseif s.mult < 0.999 then nerfs = nerfs + 1 end
+        for _, spell in ipairs(spellList) do
+            if spell.mult > 1.001 then
+                buffs = buffs + 1
+            elseif spell.mult < 0.999 then
+                nerfs = nerfs + 1
+            end
         end
-        panel.summaryText:SetText(
-            string.format("%d spells modified  |  %d buffs  |  %d nerfs",
-                #spellList, buffs, nerfs)
-        )
+        panel.summaryText:SetText(string.format(
+            "%s scope  |  %d direct abilities  |  %d buffs  |  %d nerfs",
+            scopeLabel,
+            #spellList,
+            buffs,
+            nerfs
+        ))
     end
 
-    -- create spell rows
     local scrollChild = scrollContainer.scrollChild
-    local yOff = 0
+    local yOffset = 0
 
     for _, spell in ipairs(spellList) do
         local r, g, b = U.GetCoeffColor(spell.mult, cfg)
         local row = UI.CreateSpellRow(scrollChild, spell.id, spell.name, spell.summary, r, g, b)
-        row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOff)
-        row:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOff)
+        row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOffset)
+        row:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOffset)
         row:Show()
         table.insert(spellRows, row)
-        yOff = yOff + UI.Sizes.rowH
-
-        -- affected-by sub-row
-        local affectedStr = U.FormatAffectedBy(spell.id)
-        if affectedStr then
-            local abRow = UI.CreateAffectedByRow(scrollChild, "Affected by: " .. affectedStr)
-            abRow:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOff)
-            abRow:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOff)
-            abRow:Show()
-            table.insert(spellRows, abRow)
-            yOff = yOff + UI.Sizes.rowH - 4
-        end
+        yOffset = yOffset + UI.Sizes.rowH
     end
 
-    scrollContainer:SetContentHeight(yOff + 20)
+    scrollContainer:SetContentHeight(yOffset + 20)
 end

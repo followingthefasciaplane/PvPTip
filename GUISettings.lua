@@ -10,6 +10,7 @@ function PvPTip.BuildSettingsPanel(panel)
     local padding = UI.Sizes.padding
     local spacing = 32
     local yOff = -padding
+    local addonVersion = PvPTip.version or "3.0.0"
 
     -- helper: position a component
     local function Place(widget, width)
@@ -41,8 +42,7 @@ function PvPTip.BuildSettingsPanel(panel)
     )
     Place(tooltipCb, true)
 
-    -- show in talent tooltips (to-do)
-    local talentCb = UI.CreateCheckbox(panel, "Show PvP data in talent tooltips (coming soon)",
+    local talentCb = UI.CreateCheckbox(panel, "Show PvP data in talent tooltips",
         function() return PvPTip.GetConfig().showInTalents end,
         function(v) PvPTip.GetConfig().showInTalents = v end
     )
@@ -74,9 +74,9 @@ function PvPTip.BuildSettingsPanel(panel)
 
     local modeDropdown = UI.CreateDropdown(panel, "Tooltip mode:",
         {
-            {label = "Compact (Damage +74%)", value = "compact"},
-            {label = "Verbose (full details)", value = "verbose"},
-            {label = "Minimal (+74%)", value = "minimal"},
+            {label = "Compact (label + coeff)", value = "compact"},
+            {label = "Verbose (clean details)", value = "verbose"},
+            {label = "Minimal (coeff only)", value = "minimal"},
         },
         function() return PvPTip.GetConfig().tooltipMode end,
         function(v) PvPTip.GetConfig().tooltipMode = v end
@@ -117,13 +117,13 @@ function PvPTip.BuildSettingsPanel(panel)
 
     local build = PvPTipData and PvPTipData.Build or "unknown"
     local spellCount = 0
-    local auraCount = 0
+    local relationCount = 0
     if PvPTipData then
-        if PvPTipData.Spells then
-            for _ in pairs(PvPTipData.Spells) do spellCount = spellCount + 1 end
+        if PvPTipData.PvpSpellEffects then
+            for _ in pairs(PvPTipData.PvpSpellEffects) do spellCount = spellCount + 1 end
         end
-        if PvPTipData.PvpModAuras then
-            for _ in pairs(PvPTipData.PvpModAuras) do auraCount = auraCount + 1 end
+        if PvPTipData.SpellRelations then
+            for _ in pairs(PvPTipData.SpellRelations) do relationCount = relationCount + 1 end
         end
     end
 
@@ -139,11 +139,11 @@ function PvPTip.BuildSettingsPanel(panel)
 
     local dataLabel = infoFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     dataLabel:SetPoint("TOPLEFT", buildLabel, "BOTTOMLEFT", 0, -4)
-    dataLabel:SetText(string.format("Data: %d spells, %d modifier auras", spellCount, auraCount))
+    dataLabel:SetText(string.format("Data: %d PvP spells, %d resolved spell links", spellCount, relationCount))
     dataLabel:SetTextColor(0.6, 0.6, 0.6)
 
     local versionLabel = infoFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     versionLabel:SetPoint("TOPLEFT", dataLabel, "BOTTOMLEFT", 0, -4)
-    versionLabel:SetText("PvPTip v2.0.0")
+    versionLabel:SetText("PvPTip v" .. addonVersion)
     versionLabel:SetTextColor(0.4, 0.4, 0.4)
 end

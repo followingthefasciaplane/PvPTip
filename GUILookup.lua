@@ -1,176 +1,106 @@
--- guilookup.lua 
 PvPTip = PvPTip or {}
 local UI = PvPTip.UI
 local U = PvPTip.Utils
 
--------------------------------------------------------------------------------
--- state
--------------------------------------------------------------------------------
-
-local selectedClassID = nil
+local selectedClassID
 local scrollContainer
 local summaryText
 local spellRows = {}
 
--------------------------------------------------------------------------------
--- build panel
--------------------------------------------------------------------------------
-
-function PvPTip.BuildLookupPanel(panel)
-    local padding = UI.Sizes.padding
-    local yOff = -padding
-
-    -- Header
-    local header = UI.CreateSectionHeader(panel, "Advanced Lookup",
-        "Browse PvP coefficients for any class")
-    header:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOff)
-    header:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -padding, yOff)
-    yOff = yOff - 44
-
-    -- class dropdown (only playable classes)
-    local classOptions = {}
-    if PvPTipData and PvPTipData.Classes then
-        local sorted = {}
-        for cid, data in pairs(PvPTipData.Classes) do
-            table.insert(sorted, {id = cid, name = data.n})
-        end
-        table.sort(sorted, function(a, b) return a.name < b.name end)
-        for _, entry in ipairs(sorted) do
-            table.insert(classOptions, {label = entry.name, value = entry.id})
-        end
-    end
-
-    local classDD = UI.CreateDropdown(panel, "Class:",
-        classOptions,
-        function() return selectedClassID end,
-        function(v)
-            selectedClassID = v
-            RefreshResults()
-        end
-    )
-    classDD:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOff)
-    classDD:SetWidth(400)
-    yOff = yOff - 36
-
-    -- summary bar
-    summaryText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    summaryText:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOff)
-    summaryText:SetTextColor(0.6, 0.6, 0.6)
-    summaryText:SetText("Select a class to begin")
-    yOff = yOff - 20
-
-    -- divider
-    local divider = UI.CreateDivider(panel)
-    divider:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, yOff)
-    divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, yOff)
-    yOff = yOff - 8
-
-    -- scrollable results
-    scrollContainer = UI.CreateScrollFrame(panel)
-    scrollContainer:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOff)
-    scrollContainer:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -padding, padding)
-end
-
--------------------------------------------------------------------------------
--- collect all spells for a class (all specs combined, class-level view)
--------------------------------------------------------------------------------
-
-local function CollectSpells()
-    if not selectedClassID or not PvPTipData or not PvPTipData.Spells then
+local function CollectSpellGroups(mode)
+    if not selectedClassID then
         return {}
     end
 
-    local classFamily = U.GetClassFamily(selectedClassID)
-
-    local spellList = {}
-    local seen = {}
-
-    for spellID, spellData in pairs(PvPTipData.Spells) do
-        -- strict class match: only spells belonging to this class family
-        if spellData.c == classFamily and classFamily > 0 then
-            -- build effect summary using raw base coefficients
-            local parts = {}
-            local maxDeviation = 0
-            local mainMult = 1
-
-            for _, eff in ipairs(spellData.e) do
-                if math.abs(eff.p - 1.0) > 0.001 then
-                    table.insert(parts, eff.t .. " " .. U.FormatPct(eff.p))
-                    local dev = math.abs(eff.p - 1.0)
-                    if dev > maxDeviation then
-                        maxDeviation = dev
-                        mainMult = eff.p
-                    end
-                end
-            end
-
-            if #parts > 0 and not seen[spellID] then
-                seen[spellID] = true
-                table.insert(spellList, {
-                    id = spellID,
-                    name = spellData.n,
-                    summary = table.concat(parts, " | "),
-                    mult = mainMult,
-                    sortName = spellData.n:lower(),
-                })
-            end
+    local groups = {}
+    for _, group in ipairs(U.BuildSpellGroups(U.BuildClassSourceSpellIDs(selectedClassID), {
+        groupByBaseSpell = false,
+        resolveHierarchy = false,
+    })) do
+        local summary, strongestCoefficient = U.GetGroupSummary(group, mode or "compact")
+        if summary then
+            table.insert(groups, {
+                id = group.baseSpellID,
+                group = group,
+                name = group.name,
+                summary = summary,
+                mult = strongestCoefficient or 1,
+                sortName = string.lower(group.name or ""),
+            })
         end
     end
 
-    -- also include parent spells that have children in this class
-    if PvPTipData.SpellParents then
-        for parentID, children in pairs(PvPTipData.SpellParents) do
-            if not seen[parentID] then
-                local allParts = {}
-                local mainMult = 1
-                local maxDev = 0
-                local parentMatch = false
-
-                for _, childID in ipairs(children) do
-                    local childData = PvPTipData.Spells[childID]
-                    if childData and childData.c == classFamily then
-                        parentMatch = true
-                        for _, eff in ipairs(childData.e) do
-                            if math.abs(eff.p - 1.0) > 0.001 then
-                                local text = eff.t .. " " .. U.FormatPct(eff.p)
-                                local dup = false
-                                for _, ex in ipairs(allParts) do
-                                    if ex == text then dup = true; break end
-                                end
-                                if not dup then table.insert(allParts, text) end
-                                local dev = math.abs(eff.p - 1.0)
-                                if dev > maxDev then maxDev = dev; mainMult = eff.p end
-                            end
-                        end
-                    end
-                end
-
-                if parentMatch and #allParts > 0 then
-                    local pname = U.GetSpellName(parentID, "Spell #" .. parentID)
-                    table.insert(spellList, {
-                        id = parentID,
-                        name = pname,
-                        summary = table.concat(allParts, " | "),
-                        mult = mainMult,
-                        sortName = pname:lower(),
-                    })
-                end
-            end
-        end
-    end
-
-    table.sort(spellList, function(a, b) return a.sortName < b.sortName end)
-    return spellList
+    table.sort(groups, function(left, right)
+        return left.sortName < right.sortName
+    end)
+    return groups
 end
 
--------------------------------------------------------------------------------
--- refresh results list
--------------------------------------------------------------------------------
+function PvPTip.BuildLookupPanel(panel)
+    local padding = UI.Sizes.padding
+    local yOffset = -padding
 
-function RefreshResults()
-    if not scrollContainer then return end
+    local header = UI.CreateSectionHeader(
+        panel,
+        "Class Lookup",
+        "Browse class-wide retained spell sources. Display rows show only direct per-ability PvP coefficients."
+    )
+    header:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOffset)
+    header:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -padding, yOffset)
+    yOffset = yOffset - 44
 
-    -- clear old rows
+    local classOptions = {}
+    local sortedClasses = {}
+    for classID, classData in pairs(U.GetClassDataMap()) do
+        table.insert(sortedClasses, {
+            id = classID,
+            name = classData.name or classData.n or ("Class #" .. tostring(classID)),
+        })
+    end
+    table.sort(sortedClasses, function(left, right)
+        return left.name < right.name
+    end)
+    for _, entry in ipairs(sortedClasses) do
+        table.insert(classOptions, {label = entry.name, value = entry.id})
+    end
+
+    if not selectedClassID or not U.GetClassDataMap()[selectedClassID] then
+        selectedClassID = PvPTip.currentClassID or (sortedClasses[1] and sortedClasses[1].id) or nil
+    end
+
+    local classDropdown = UI.CreateDropdown(panel, "Class:",
+        classOptions,
+        function() return selectedClassID end,
+        function(value)
+            selectedClassID = value
+            PvPTip.RefreshLookup()
+        end
+    )
+    classDropdown:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOffset)
+    classDropdown:SetWidth(400)
+    yOffset = yOffset - 36
+
+    summaryText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    summaryText:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOffset)
+    summaryText:SetTextColor(0.6, 0.6, 0.6)
+    summaryText:SetText("Select a class to browse direct ability coefficients")
+    yOffset = yOffset - 20
+
+    local divider = UI.CreateDivider(panel)
+    divider:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, yOffset)
+    divider:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, yOffset)
+    yOffset = yOffset - 8
+
+    scrollContainer = UI.CreateScrollFrame(panel)
+    scrollContainer:SetPoint("TOPLEFT", panel, "TOPLEFT", padding, yOffset)
+    scrollContainer:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -padding, padding)
+end
+
+function PvPTip.RefreshLookup()
+    if not scrollContainer then
+        return
+    end
+
     for _, row in ipairs(spellRows) do
         row:Hide()
         row:SetParent(nil)
@@ -178,53 +108,41 @@ function RefreshResults()
     wipe(spellRows)
 
     if not selectedClassID then
-        if summaryText then summaryText:SetText("Select a class to begin") end
+        if summaryText then
+            summaryText:SetText("Select a class to begin")
+        end
         scrollContainer:SetContentHeight(0)
         return
     end
 
     local cfg = PvPTip.GetConfig()
-    local spellList = CollectSpells()
+    local spellList = CollectSpellGroups(cfg.tooltipMode)
 
-    -- update summary
     if summaryText then
-        local buffs, nerfs = 0, 0
-        for _, s in ipairs(spellList) do
-            if s.mult > 1.001 then buffs = buffs + 1
-            elseif s.mult < 0.999 then nerfs = nerfs + 1 end
+        local buffs = 0
+        local nerfs = 0
+        for _, spell in ipairs(spellList) do
+            if spell.mult > 1.001 then
+                buffs = buffs + 1
+            elseif spell.mult < 0.999 then
+                nerfs = nerfs + 1
+            end
         end
-        summaryText:SetText(
-            string.format("%d spells  |  %d buffs  |  %d nerfs",
-                #spellList, buffs, nerfs)
-        )
+        summaryText:SetText(string.format("%d direct abilities  |  %d buffs  |  %d nerfs", #spellList, buffs, nerfs))
     end
 
-    -- create spell rows
     local scrollChild = scrollContainer.scrollChild
-    local yOff = 0
+    local yOffset = 0
 
     for _, spell in ipairs(spellList) do
         local r, g, b = U.GetCoeffColor(spell.mult, cfg)
         local row = UI.CreateSpellRow(scrollChild, spell.id, spell.name, spell.summary, r, g, b)
-        row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOff)
-        row:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOff)
+        row:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOffset)
+        row:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOffset)
         row:Show()
         table.insert(spellRows, row)
-        yOff = yOff + UI.Sizes.rowH
-
-        -- affected-by sub-row
-        local affectedStr = U.FormatAffectedBy(spell.id)
-        if affectedStr then
-            local abRow = UI.CreateAffectedByRow(scrollChild, "Affected by: " .. affectedStr)
-            abRow:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, -yOff)
-            abRow:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", 0, -yOff)
-            abRow:Show()
-            table.insert(spellRows, abRow)
-            yOff = yOff + UI.Sizes.rowH - 4
-        end
+        yOffset = yOffset + UI.Sizes.rowH
     end
 
-    scrollContainer:SetContentHeight(yOff + 20)
+    scrollContainer:SetContentHeight(yOffset + 20)
 end
-
-PvPTip.RefreshLookup = RefreshResults

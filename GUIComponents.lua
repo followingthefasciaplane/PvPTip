@@ -622,9 +622,19 @@ function UI.CreateColorPicker(parent, label, getValue, setValue)
     swatch:SetScript("OnClick", function()
         local c = getValue()
         local info = {}
+        local colorPicker = ColorPickerFrame
+        if not colorPicker then
+            return
+        end
+        local setupColorPickerAndShow = colorPicker.SetupColorPickerAndShow
+        local getColorRGB = colorPicker.GetColorRGB
+        local legacySetColorRGB = colorPicker["SetColorRGB"]
         info.r, info.g, info.b = c[1], c[2], c[3]
         info.swatchFunc = function()
-            local r, g, b = ColorPickerFrame:GetColorRGB()
+            local r, g, b = info.r, info.g, info.b
+            if getColorRGB then
+                r, g, b = getColorRGB(colorPicker)
+            end
             setValue({r, g, b})
             UpdateSwatch()
         end
@@ -633,13 +643,17 @@ function UI.CreateColorPicker(parent, label, getValue, setValue)
             UpdateSwatch()
         end
         info.hasOpacity = false
-        if ColorPickerFrame.SetupColorPickerAndShow then
-            ColorPickerFrame:SetupColorPickerAndShow(info)
+        if setupColorPickerAndShow then
+            setupColorPickerAndShow(colorPicker, info)
         else
-            ColorPickerFrame:SetColorRGB(info.r, info.g, info.b)
-            ColorPickerFrame.func = info.swatchFunc
-            ColorPickerFrame.cancelFunc = info.cancelFunc
-            ColorPickerFrame:Show()
+            if legacySetColorRGB then
+                legacySetColorRGB(colorPicker, info.r, info.g, info.b)
+            end
+            ---@diagnostic disable-next-line: inject-field
+            colorPicker.func = info.swatchFunc
+            ---@diagnostic disable-next-line: inject-field
+            colorPicker.cancelFunc = info.cancelFunc
+            colorPicker:Show()
         end
     end)
 
