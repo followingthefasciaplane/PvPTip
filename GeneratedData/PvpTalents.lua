@@ -1,5 +1,5 @@
 -- TooltipEngine GeneratedData/PvpTalents.lua — AUTO-GENERATED, DO NOT EDIT
--- Build: 12.0.5.67088
+-- Build: 12.0.5.67186
 
 TooltipEngineData = TooltipEngineData or {}
 PvPTipData = TooltipEngineData

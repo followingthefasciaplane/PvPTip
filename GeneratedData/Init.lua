@@ -1,5 +1,5 @@
 -- TooltipEngine GeneratedData/Init.lua — AUTO-GENERATED, DO NOT EDIT
--- Build: 12.0.5.67088
+-- Build: 12.0.5.67186
 
 TooltipEngine = TooltipEngine or {}
 local T = TooltipEngine
@@ -34,4 +34,4 @@ function T.MergeCompactData(name, payload)
   MergeTables(current, payload)
 end
 
-TooltipEngineData.Build = "12.0.5.67088"
+TooltipEngineData.Build = "12.0.5.67186"

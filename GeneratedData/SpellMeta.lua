@@ -1,5 +1,5 @@
 -- TooltipEngine GeneratedData/SpellMeta.lua — AUTO-GENERATED, DO NOT EDIT
--- Build: 12.0.5.67088
+-- Build: 12.0.5.67186
 
 TooltipEngineData = TooltipEngineData or {}
 PvPTipData = TooltipEngineData
@@ -279,10 +279,12 @@ TooltipEngineData.SpellMeta = {
   [115176]={durationMS=8000,maxDurationMS=8000},
   [115193]={durationMS=3000,maxDurationMS=3000,pvpDurationMS=1500,pvpMaxDurationMS=1500},
   [115268]={durationMS=30000,maxDurationMS=30000,pvpDurationMS=8000,pvpMaxDurationMS=8000},
+  [115294]={durationMS=3000,maxDurationMS=3000},
   [115313]={durationMS=900000,maxDurationMS=900000},
   [115315]={durationMS=900000,maxDurationMS=900000},
   [115625]={durationMS=12000,maxDurationMS=12000},
   [115804]={durationMS=10000,maxDurationMS=10000},
+  [115867]={durationMS=120000,maxDurationMS=120000},
   [116014]={durationMS=12000,maxDurationMS=12000},
   [116095]={durationMS=15000,maxDurationMS=15000,pvpDurationMS=8000,pvpMaxDurationMS=8000},
   [116330]={durationMS=15000,maxDurationMS=15000,pvpDurationMS=8000,pvpMaxDurationMS=8000},

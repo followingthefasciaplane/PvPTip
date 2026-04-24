@@ -1785,6 +1785,20 @@ end
 function U.GetGroupSummary(group, mode)
     local rows, strongestCoefficient = U.GetGroupPvpRows(group, mode or "compact")
     local parts = {}
+    local seenDurations = {}
+
+    local function AddDurationPart(spellID)
+        local text = U.FormatPvpDurationForSpell(spellID, mode)
+        if text and text ~= "" and not seenDurations[text] then
+            seenDurations[text] = true
+            table.insert(parts, text)
+        end
+    end
+
+    AddDurationPart(group and group.baseSpellID)
+    for _, spellID in ipairs((group and group.resolvedSpellIDs) or {}) do
+        AddDurationPart(spellID)
+    end
 
     for _, row in ipairs(rows) do
         if row.text and row.text ~= "" then
