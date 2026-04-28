@@ -197,6 +197,28 @@ local function ExpandLiveSpellIDs(result, spellID, seen)
             end
         end
     end
+
+    local relation = U.GetSpellRelation(numericSpellID)
+    if relation then
+        local canonicalSpellID = ToNumber(relation.canonicalSpellID or relation.c)
+        if canonicalSpellID and canonicalSpellID ~= numericSpellID then
+            ExpandLiveSpellIDs(result, canonicalSpellID, seen)
+        end
+
+        for _, bucket in ipairs({
+            relation.resolvedSpellIDs or relation.r,
+            relation.sourceSpellIDs or relation.s,
+            relation.replacementSpellIDs or relation.rp,
+            relation.displaySpellIDs or relation.d,
+            relation.triggerSpellIDs or relation.t,
+        }) do
+            for _, relatedSpellID in ipairs(bucket or {}) do
+                if relatedSpellID ~= numericSpellID then
+                    ExpandLiveSpellIDs(result, relatedSpellID, seen)
+                end
+            end
+        end
+    end
 end
 
 local function GetExpandedSpellIDs(spellID)
@@ -752,13 +774,21 @@ local function BuildCandidateSpellIDs(tooltip, data, context, knownIndex)
     return candidates
 end
 
-local function SpellHasDirectPvpRows(spellID)
-    return #U.GetPvpEffects(spellID) > 0
+local function SpellHasRenderablePvpData(spellID)
+    local resolvedSpellIDs = U.GetResolvedSpellIDs(spellID) or {spellID}
+
+    for _, resolvedSpellID in ipairs(resolvedSpellIDs) do
+        if #U.GetPvpEffects(resolvedSpellID) > 0 or U.GetSpellPvpDurationInfo(resolvedSpellID) then
+            return true
+        end
+    end
+
+    return false
 end
 
 local function SelectPrimarySpellID(candidateSpellIDs)
     for _, spellID in ipairs(candidateSpellIDs or {}) do
-        if SpellHasDirectPvpRows(spellID) then
+        if SpellHasRenderablePvpData(spellID) then
             return spellID
         end
     end

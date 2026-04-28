@@ -637,8 +637,8 @@ function U.GetSpellRelation(spellID)
     end
 
     local spellRelationsGraph = U.GetDataTable("SpellRelationsGraph")
+    local relation = {}
     if spellRelationsGraph then
-        local relation = {}
         local canonical = (spellRelationsGraph.canonical or spellRelationsGraph.c or {})[numericSpellID]
         local replacement = (spellRelationsGraph.replacement or spellRelationsGraph.rp or {})[numericSpellID]
         local display = (spellRelationsGraph.display or spellRelationsGraph.d or {})[numericSpellID]
@@ -664,15 +664,38 @@ function U.GetSpellRelation(spellID)
         if sources and #sources > 0 then
             relation.sourceSpellIDs = sources
         end
-
-        if next(relation) then
-            relationFromGraphCache[numericSpellID] = relation
-            return relation
-        end
     end
 
     local spellRelations = U.GetDataTable("SpellRelations")
-    return spellRelations and spellRelations[numericSpellID] or nil
+    local fallback = spellRelations and spellRelations[numericSpellID] or nil
+    if fallback then
+        relation.canonicalSpellID = relation.canonicalSpellID
+            or fallback.canonicalSpellID
+            or fallback.c
+
+        if not (relation.replacementSpellIDs and #relation.replacementSpellIDs > 0) then
+            relation.replacementSpellIDs = fallback.replacementSpellIDs or fallback.rp
+        end
+        if not (relation.displaySpellIDs and #relation.displaySpellIDs > 0) then
+            relation.displaySpellIDs = fallback.displaySpellIDs or fallback.d
+        end
+        if not (relation.triggerSpellIDs and #relation.triggerSpellIDs > 0) then
+            relation.triggerSpellIDs = fallback.triggerSpellIDs or fallback.t
+        end
+        if not (relation.resolvedSpellIDs and #relation.resolvedSpellIDs > 0) then
+            relation.resolvedSpellIDs = fallback.resolvedSpellIDs or fallback.r
+        end
+        if not (relation.sourceSpellIDs and #relation.sourceSpellIDs > 0) then
+            relation.sourceSpellIDs = fallback.sourceSpellIDs or fallback.s
+        end
+    end
+
+    if next(relation) then
+        relationFromGraphCache[numericSpellID] = relation
+        return relation
+    end
+
+    return nil
 end
 
 function U.GetSpellMeta(spellID)

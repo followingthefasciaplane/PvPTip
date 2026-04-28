@@ -227,7 +227,7 @@ RenderTooltip = function(tooltip, data, forceRender, hasRetried)
     local displays = {}
     for _, group in ipairs(U.BuildSpellGroups(resolved.spellIDs, {
         groupByBaseSpell = false,
-        resolveHierarchy = false,
+        resolveHierarchy = true,
     })) do
         local display = BuildGroupDisplay(group, cfg)
         if display then
