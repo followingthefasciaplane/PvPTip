@@ -1,5 +1,5 @@
 -- TooltipEngine GeneratedData/SpellEffectFacts.lua — AUTO-GENERATED, DO NOT EDIT
--- Build: 12.0.5.67186
+-- Build: 12.0.5.67314
 
 TooltipEngineData = TooltipEngineData or {}
 PvPTipData = TooltipEngineData

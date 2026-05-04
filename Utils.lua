@@ -55,13 +55,36 @@ U.FAMILY_TO_CLASS = {
     [53] = 10, [107] = 12, [224] = 13,
 }
 
+local function IsSecretValue(value)
+    if type(issecretvalue) ~= "function" then
+        return false
+    end
+
+    local ok, isSecret = pcall(issecretvalue, value)
+    return ok and isSecret or false
+end
+
 local function ToNumber(value)
-    local numericValue = tonumber(value)
-    if not numericValue or numericValue <= 0 then
+    if value == nil or IsSecretValue(value) then
         return nil
     end
+
+    local ok, numericValue = pcall(tonumber, value)
+    if not ok or type(numericValue) ~= "number" or IsSecretValue(numericValue) then
+        return nil
+    end
+
+    local compareOK, isPositive = pcall(function()
+        return numericValue > 0
+    end)
+    if not compareOK or not isPositive then
+        return nil
+    end
+
     return numericValue
 end
+
+U.SafeToNumber = ToNumber
 
 local function GetRawTableField(container, key)
     if type(container) ~= "table" or type(key) ~= "string" then

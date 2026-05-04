@@ -19,11 +19,7 @@ local function WipeTable(target)
 end
 
 local function ToNumber(value)
-    local numericValue = tonumber(value)
-    if not numericValue or numericValue <= 0 then
-        return nil
-    end
-    return numericValue
+    return U.SafeToNumber(value)
 end
 
 local function SafeCallNumber(func, ...)
@@ -717,8 +713,10 @@ local function CollectTooltipHintSpellIDs(tooltip, data, context)
         AddOrderedSpellID(hints, seen, value)
     end
 
-    if tooltipEnum and (dataType == tooltipEnum.Spell or dataType == tooltipEnum.UnitAura) then
+    if tooltipEnum and dataType == tooltipEnum.Spell then
         AddHint(data and (data.id or data.spellID))
+    elseif tooltipEnum and dataType == tooltipEnum.UnitAura then
+        AddHint(data and data.spellID)
     end
     AddHint(data and data.spellID)
     AddHint(context and context.spellID)

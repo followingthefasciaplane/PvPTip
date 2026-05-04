@@ -26,8 +26,8 @@ local function GetTooltipSpellID(tooltip)
     end
 
     local _, spellID = tooltip:GetSpell()
-    local numericSpellID = tonumber(spellID)
-    if numericSpellID and numericSpellID > 0 then
+    local numericSpellID = U.SafeToNumber(spellID)
+    if numericSpellID then
         return numericSpellID
     end
     return nil
@@ -142,8 +142,8 @@ local function RequestSpellDataForCandidates(resolved)
     local requested = false
     local candidates = resolved and (resolved.candidateSpellIDs or resolved.spellIDs) or {}
     for _, spellID in ipairs(candidates or {}) do
-        local numericSpellID = tonumber(spellID)
-        if numericSpellID and numericSpellID > 0 and not IsSpellDataCached(numericSpellID) then
+        local numericSpellID = U.SafeToNumber(spellID)
+        if numericSpellID and not IsSpellDataCached(numericSpellID) then
             C_Spell.RequestLoadSpellData(numericSpellID)
             requested = true
         end
